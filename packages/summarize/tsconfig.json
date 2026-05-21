@@ -9,11 +9,6 @@
   "references": [
     { "path": "../core" },
     { "path": "../store" },
-    { "path": "../chunker" },
-    { "path": "../embed" },
-    { "path": "../capture" },
-    { "path": "../retrieve" },
-    { "path": "../eval" },
-    { "path": "../summarize" }
+    { "path": "../embed" }
   ]
 }

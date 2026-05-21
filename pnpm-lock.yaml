@@ -53,6 +53,9 @@ importers:
       '@osm/store':
         specifier: workspace:*
         version: link:../store
+      '@osm/summarize':
+        specifier: workspace:*
+        version: link:../summarize
 
   packages/core:
     dependencies:
@@ -111,6 +114,18 @@ importers:
       '@types/better-sqlite3':
         specifier: ^7.6.11
         version: 7.6.13
+
+  packages/summarize:
+    dependencies:
+      '@osm/core':
+        specifier: workspace:*
+        version: link:../core
+      '@osm/embed':
+        specifier: workspace:*
+        version: link:../embed
+      '@osm/store':
+        specifier: workspace:*
+        version: link:../store
 
 packages:
 

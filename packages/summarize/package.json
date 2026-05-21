@@ -1,25 +1,24 @@
 {
-  "name": "@osm/cli",
+  "name": "@osm/summarize",
   "version": "0.1.0-dev",
   "private": true,
   "type": "module",
-  "bin": {
-    "osm": "./dist/index.js"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "tsx src/index.ts",
     "test": "echo 'no tests yet'"
   },
   "dependencies": {
     "@osm/core": "workspace:*",
     "@osm/store": "workspace:*",
-    "@osm/chunker": "workspace:*",
-    "@osm/embed": "workspace:*",
-    "@osm/capture": "workspace:*",
-    "@osm/retrieve": "workspace:*",
-    "@osm/eval": "workspace:*",
-    "@osm/summarize": "workspace:*"
+    "@osm/embed": "workspace:*"
   }
 }

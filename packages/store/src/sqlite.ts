@@ -16,6 +16,8 @@ import * as sqliteVec from "sqlite-vec";
 import type {
   AuditKind,
   Chunk,
+  EphemeralChunk,
+  EphemeralMemory,
   Memory,
   MemoryStatus,
   Scope,
@@ -78,6 +80,34 @@ export interface LexicalHit {
   rank: number;
 }
 
+export interface EphemeralMemoryRow {
+  memory_id: string;
+  session_id: string;
+  memory_type: string;
+  summary: string;
+  importance: number;
+  confidence: number;
+  citation: string;
+  source_kind: "assistant_inferred";
+  scope: Scope;
+  status: "active" | "expired";
+  raw_excerpt: string | null;
+  hash: string;
+  created_at: string;
+  expires_at: string;
+  json: string;
+}
+
+export interface EphemeralChunkRow {
+  chunk_id: string;
+  memory_id: string;
+  text: string;
+  embedding_model_id: string;
+  hash: string;
+  created_at: string;
+  expires_at: string;
+}
+
 export class OsmStore {
   private readonly db: Database.Database;
   private readonly embeddingId: string;
@@ -126,6 +156,19 @@ export class OsmStore {
       );
 
       CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts
+      USING fts5(
+        chunk_id UNINDEXED,
+        text,
+        tokenize = 'unicode61 remove_diacritics 2'
+      );
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS ephemeral_chunk_vectors
+      USING vec0(
+        chunk_id TEXT PRIMARY KEY,
+        embedding FLOAT[${this.dim}]
+      );
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS ephemeral_chunk_fts
       USING fts5(
         chunk_id UNINDEXED,
         text,
@@ -508,6 +551,310 @@ export class OsmStore {
 
   close(): void {
     this.db.close();
+  }
+
+  /* ============================================================
+   * Phase-2: ephemeral memory layer (session summaries)
+   * ============================================================ */
+
+  /** Insert or replace an ephemeral memory + its single chunk. */
+  upsertEphemeral(
+    memory: EphemeralMemory,
+    chunk: EphemeralChunk,
+    embedding: number[]
+  ): void {
+    if (embedding.length !== this.dim) {
+      throw new Error(
+        `osm/store: ephemeral embedding length ${embedding.length} != dim ${this.dim}`
+      );
+    }
+    if (memory.sourceKind !== "assistant_inferred") {
+      throw new Error(
+        "osm/store: ephemeral.sourceKind must be 'assistant_inferred'"
+      );
+    }
+    if (memory.confidence >= 1.0) {
+      throw new Error(
+        "osm/store: ephemeral.confidence must be < 1.0"
+      );
+    }
+    if (!memory.expiresAt) {
+      throw new Error("osm/store: ephemeral.expiresAt is required");
+    }
+
+    const tx = this.db.transaction(
+      (m: EphemeralMemory, c: EphemeralChunk, vec: number[]) => {
+        this.db
+          .prepare(
+            `INSERT INTO ephemeral_memories
+              (memory_id, session_id, memory_type, summary,
+               importance, confidence, citation, source_kind,
+               scope, status, raw_excerpt, hash, expires_at, json)
+             VALUES
+              (@memory_id, @session_id, @memory_type, @summary,
+               @importance, @confidence, @citation, @source_kind,
+               @scope, @status, @raw_excerpt, @hash, @expires_at, @json)
+             ON CONFLICT(memory_id) DO UPDATE SET
+               session_id   = excluded.session_id,
+               memory_type  = excluded.memory_type,
+               summary      = excluded.summary,
+               importance   = excluded.importance,
+               confidence   = excluded.confidence,
+               citation     = excluded.citation,
+               source_kind  = excluded.source_kind,
+               scope        = excluded.scope,
+               status       = excluded.status,
+               raw_excerpt  = excluded.raw_excerpt,
+               hash         = excluded.hash,
+               expires_at   = excluded.expires_at,
+               json         = excluded.json`
+          )
+          .run({
+            memory_id: m.memoryId,
+            session_id: m.sessionId,
+            memory_type: m.memoryType,
+            summary: m.summary,
+            importance: m.importance,
+            confidence: m.confidence,
+            citation: m.citation,
+            source_kind: m.sourceKind,
+            scope: m.scope,
+            status: m.status,
+            raw_excerpt: m.rawExcerpt ?? null,
+            hash: m.hash,
+            expires_at: m.expiresAt,
+            json: JSON.stringify(m),
+          });
+
+        this.db
+          .prepare(
+            `INSERT INTO ephemeral_chunks
+              (chunk_id, memory_id, text, embedding_model_id, hash, expires_at)
+             VALUES
+              (@chunk_id, @memory_id, @text, @embedding_model_id, @hash, @expires_at)
+             ON CONFLICT(chunk_id) DO UPDATE SET
+               memory_id          = excluded.memory_id,
+               text               = excluded.text,
+               embedding_model_id = excluded.embedding_model_id,
+               hash               = excluded.hash,
+               expires_at         = excluded.expires_at`
+          )
+          .run({
+            chunk_id: c.chunkId,
+            memory_id: c.memoryId,
+            text: c.text,
+            embedding_model_id: c.embeddingModelId,
+            hash: c.hash,
+            expires_at: c.expiresAt,
+          });
+
+        this.db
+          .prepare("DELETE FROM ephemeral_chunk_vectors WHERE chunk_id = ?")
+          .run(c.chunkId);
+        this.db
+          .prepare(
+            "INSERT INTO ephemeral_chunk_vectors(chunk_id, embedding) VALUES(?, ?)"
+          )
+          .run(c.chunkId, new Float32Array(vec));
+
+        this.db
+          .prepare("DELETE FROM ephemeral_chunk_fts WHERE chunk_id = ?")
+          .run(c.chunkId);
+        this.db
+          .prepare("INSERT INTO ephemeral_chunk_fts(chunk_id, text) VALUES(?, ?)")
+          .run(c.chunkId, c.text);
+      }
+    );
+
+    tx(memory, chunk, embedding);
+  }
+
+  getEphemeralById(memoryId: string): EphemeralMemory | null {
+    const row = this.db
+      .prepare("SELECT json FROM ephemeral_memories WHERE memory_id = ?")
+      .get(memoryId) as { json: string } | undefined;
+    if (!row) return null;
+    return JSON.parse(row.json) as EphemeralMemory;
+  }
+
+  countEphemeralMemories(): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS n FROM ephemeral_memories")
+      .get() as { n: number };
+    return row.n;
+  }
+
+  countEphemeralByStatus(): Record<string, number> {
+    const rows = this.db
+      .prepare(
+        "SELECT status, COUNT(*) AS n FROM ephemeral_memories GROUP BY status"
+      )
+      .all() as Array<{ status: string; n: number }>;
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.status] = r.n;
+    return out;
+  }
+
+  countEphemeralOverdue(nowIso: string): number {
+    const row = this.db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM ephemeral_memories WHERE expires_at < ?"
+      )
+      .get(nowIso) as { n: number };
+    return row.n;
+  }
+
+  avgEphemeralConfidence(): number | null {
+    const row = this.db
+      .prepare(
+        "SELECT AVG(confidence) AS avg FROM ephemeral_memories WHERE status = 'active'"
+      )
+      .get() as { avg: number | null };
+    return row.avg;
+  }
+
+  listEphemeralBySession(sessionId: string): EphemeralMemoryRow[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM ephemeral_memories WHERE session_id = ? ORDER BY created_at DESC"
+      )
+      .all(sessionId) as EphemeralMemoryRow[];
+  }
+
+  ephemeralChunkById(chunkId: string): EphemeralChunkRow | null {
+    const row = this.db
+      .prepare("SELECT * FROM ephemeral_chunks WHERE chunk_id = ?")
+      .get(chunkId) as EphemeralChunkRow | undefined;
+    return row ?? null;
+  }
+
+  ephemeralVectorSearch(query: number[], k: number): VectorHit[] {
+    if (query.length !== this.dim) {
+      throw new Error(
+        `osm/store: query embedding length ${query.length} != dim ${this.dim}`
+      );
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT chunk_id, distance
+           FROM ephemeral_chunk_vectors
+          WHERE embedding MATCH ?
+          ORDER BY distance
+          LIMIT ?`
+      )
+      .all(new Float32Array(query), k) as Array<{
+      chunk_id: string;
+      distance: number;
+    }>;
+    return rows.map((r) => ({ chunkId: r.chunk_id, distance: r.distance }));
+  }
+
+  ephemeralLexicalSearch(query: string, k: number): LexicalHit[] {
+    const ftsQuery = escapeFtsQuery(query);
+    if (!ftsQuery) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT chunk_id, bm25(ephemeral_chunk_fts) AS rank
+           FROM ephemeral_chunk_fts
+          WHERE ephemeral_chunk_fts MATCH ?
+          ORDER BY rank
+          LIMIT ?`
+      )
+      .all(ftsQuery, k) as Array<{ chunk_id: string; rank: number }>;
+    return rows.map((r) => ({ chunkId: r.chunk_id, rank: r.rank }));
+  }
+
+  /**
+   * Mark expired ephemeral memories whose expires_at < nowIso. Returns the
+   * number of newly-expired rows. Does not delete; use
+   * `vacuumExpiredEphemeral` for hard delete.
+   */
+  markExpiredEphemeral(nowIso: string): number {
+    const result = this.db
+      .prepare(
+        `UPDATE ephemeral_memories
+            SET status = 'expired'
+          WHERE status = 'active' AND expires_at < ?`
+      )
+      .run(nowIso);
+    return result.changes;
+  }
+
+  /** Hard-delete expired ephemeral chunks + memories. */
+  vacuumExpiredEphemeral(nowIso: string): { memories: number; chunks: number } {
+    const tx = this.db.transaction((iso: string) => {
+      const cv = this.db
+        .prepare(
+          `DELETE FROM ephemeral_chunk_vectors
+            WHERE chunk_id IN (SELECT chunk_id FROM ephemeral_chunks WHERE expires_at < ?)`
+        )
+        .run(iso);
+      const cf = this.db
+        .prepare(
+          `DELETE FROM ephemeral_chunk_fts
+            WHERE chunk_id IN (SELECT chunk_id FROM ephemeral_chunks WHERE expires_at < ?)`
+        )
+        .run(iso);
+      const c = this.db
+        .prepare("DELETE FROM ephemeral_chunks WHERE expires_at < ?")
+        .run(iso);
+      const m = this.db
+        .prepare("DELETE FROM ephemeral_memories WHERE expires_at < ?")
+        .run(iso);
+      return {
+        memories: m.changes,
+        chunks: c.changes,
+        cleanedVectors: cv.changes,
+        cleanedFts: cf.changes,
+      };
+    });
+    const r = tx(nowIso);
+    return { memories: r.memories, chunks: r.chunks };
+  }
+
+  /**
+   * Delete all ephemeral data for a given session. Useful when a session
+   * is rebuilt or removed.
+   */
+  deleteEphemeralBySession(sessionId: string): {
+    memories: number;
+    chunks: number;
+  } {
+    const tx = this.db.transaction((sid: string) => {
+      this.db
+        .prepare(
+          `DELETE FROM ephemeral_chunk_vectors
+            WHERE chunk_id IN (
+              SELECT c.chunk_id FROM ephemeral_chunks c
+              JOIN ephemeral_memories m ON m.memory_id = c.memory_id
+              WHERE m.session_id = ?
+            )`
+        )
+        .run(sid);
+      this.db
+        .prepare(
+          `DELETE FROM ephemeral_chunk_fts
+            WHERE chunk_id IN (
+              SELECT c.chunk_id FROM ephemeral_chunks c
+              JOIN ephemeral_memories m ON m.memory_id = c.memory_id
+              WHERE m.session_id = ?
+            )`
+        )
+        .run(sid);
+      const c = this.db
+        .prepare(
+          `DELETE FROM ephemeral_chunks
+            WHERE memory_id IN (
+              SELECT memory_id FROM ephemeral_memories WHERE session_id = ?
+            )`
+        )
+        .run(sid);
+      const m = this.db
+        .prepare("DELETE FROM ephemeral_memories WHERE session_id = ?")
+        .run(sid);
+      return { memories: m.changes, chunks: c.changes };
+    });
+    return tx(sessionId);
   }
 }
 

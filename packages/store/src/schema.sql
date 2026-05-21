@@ -81,3 +81,50 @@ CREATE TABLE IF NOT EXISTS index_meta (
 --
 -- Same for the FTS5 table; it has no dim concern but lives next to vec0
 -- creation for symmetry. See store/sqlite.ts ensureSearchTables().
+
+-- ============================================================
+-- Phase-2: ephemeral memory layer (session summaries, etc.)
+--
+-- Hard rules:
+--   * ephemeral memories ALWAYS have source_kind='assistant_inferred'
+--   * ephemeral memories ALWAYS have a non-NULL expires_at
+--   * ephemeral memories NEVER live in `memories` / `chunks` / `chunk_vectors`
+--   * `osm index --rebuild` does NOT touch ephemeral_*
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ephemeral_memories (
+  memory_id    TEXT PRIMARY KEY,
+  session_id   TEXT NOT NULL,
+  memory_type  TEXT NOT NULL,
+  summary      TEXT NOT NULL,
+  importance   REAL NOT NULL,
+  confidence   REAL NOT NULL,
+  citation     TEXT NOT NULL,
+  source_kind  TEXT NOT NULL CHECK(source_kind = 'assistant_inferred'),
+  scope        TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'active',
+  raw_excerpt  TEXT,
+  hash         TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  expires_at   TEXT NOT NULL,
+  json         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ephemeral_memories_session_idx ON ephemeral_memories(session_id);
+CREATE INDEX IF NOT EXISTS ephemeral_memories_expires_idx ON ephemeral_memories(expires_at);
+CREATE INDEX IF NOT EXISTS ephemeral_memories_status_idx  ON ephemeral_memories(status);
+
+CREATE TABLE IF NOT EXISTS ephemeral_chunks (
+  chunk_id           TEXT PRIMARY KEY,
+  memory_id          TEXT NOT NULL,
+  text               TEXT NOT NULL,
+  embedding_model_id TEXT NOT NULL,
+  hash               TEXT NOT NULL,
+  created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  expires_at         TEXT NOT NULL,
+  FOREIGN KEY (memory_id) REFERENCES ephemeral_memories(memory_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ephemeral_chunks_memory_idx  ON ephemeral_chunks(memory_id);
+CREATE INDEX IF NOT EXISTS ephemeral_chunks_expires_idx ON ephemeral_chunks(expires_at);
+CREATE INDEX IF NOT EXISTS ephemeral_chunks_embedding_idx ON ephemeral_chunks(embedding_model_id);

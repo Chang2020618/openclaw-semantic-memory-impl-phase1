@@ -5,4 +5,6 @@ export type {
   ChunkRow,
   VectorHit,
   LexicalHit,
+  EphemeralMemoryRow,
+  EphemeralChunkRow,
 } from "./sqlite.js";

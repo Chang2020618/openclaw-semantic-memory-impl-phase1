@@ -14,6 +14,7 @@ import { runExplain } from "./cmd-explain.js";
 import { runDoctor } from "./cmd-doctor.js";
 import { runWatch } from "./cmd-watch.js";
 import { runEvalCmd } from "./cmd-eval.js";
+import { runSummarize } from "./cmd-summarize.js";
 
 const VERSION = "0.1.0-dev";
 
@@ -71,6 +72,11 @@ function printHelp(): void {
     "  doctor                health check (8 signals)",
     "  eval <test-set>       run frozen test set, score against v0.1 gates",
     "  eval ... --labels <p> include human verdicts for false-memory metric",
+    "  summarize --session <id>   ingest an OpenClaw session transcript as",
+    "                             ephemeral memories (Phase-2)",
+    "  summarize --session-file <path>  same, but explicit jsonl path",
+    "  summarize ... --prompt-only      print the prompt; do not call LLM",
+    "  summarize ... --ingest-file <f>  skip LLM, ingest JSON from <f>",
     "  version               print version and exit",
     "  help                  print this help",
     "",
@@ -144,6 +150,8 @@ async function main(argv: string[]): Promise<number> {
         topK: typeof topK === "number" && Number.isFinite(topK) ? topK : undefined,
         json: Boolean(flags["json"]),
         debug: Boolean(flags["debug"]),
+        noEphemeral: Boolean(flags["no-ephemeral"]),
+        onlyEphemeral: Boolean(flags["only-ephemeral"]),
         providerOverride:
           typeof flags["provider"] === "string" ? flags["provider"] : undefined,
       });
@@ -181,6 +189,7 @@ async function main(argv: string[]): Promise<number> {
       return runDoctor({
         rootFlag: rootFlagOf(flags),
         json: Boolean(flags["json"]),
+        vacuum: Boolean(flags["vacuum"]),
         ...(typeof flags["provider"] === "string"
           ? { providerOverride: flags["provider"] }
           : {}),
@@ -200,6 +209,40 @@ async function main(argv: string[]): Promise<number> {
         ...(typeof flags["provider"] === "string"
           ? { providerOverride: flags["provider"] }
           : {}),
+      });
+    }
+    case "summarize": {
+      const ttlRaw = flags["ttl-days"];
+      const ttl =
+        typeof ttlRaw === "string" ? Number.parseInt(ttlRaw, 10) : undefined;
+      return await runSummarize({
+        rootFlag: rootFlagOf(flags),
+        sessionId:
+          typeof flags["session"] === "string" ? flags["session"] : undefined,
+        sessionFile:
+          typeof flags["session-file"] === "string"
+            ? flags["session-file"]
+            : undefined,
+        agentId:
+          typeof flags["agent"] === "string" ? flags["agent"] : undefined,
+        start: typeof flags["start"] === "string" ? flags["start"] : undefined,
+        end: typeof flags["end"] === "string" ? flags["end"] : undefined,
+        ttlDays:
+          typeof ttl === "number" && Number.isFinite(ttl) && ttl > 0
+            ? ttl
+            : undefined,
+        modelOverride:
+          typeof flags["model"] === "string" ? flags["model"] : undefined,
+        providerOverride:
+          typeof flags["provider"] === "string"
+            ? flags["provider"]
+            : undefined,
+        promptOnly: Boolean(flags["prompt-only"]),
+        ingestFile:
+          typeof flags["ingest-file"] === "string"
+            ? flags["ingest-file"]
+            : undefined,
+        json: Boolean(flags["json"]),
       });
     }
 

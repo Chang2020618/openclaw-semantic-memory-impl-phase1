@@ -212,12 +212,68 @@ export type AuditKind =
   | "inject"
   | "rebuild"
   | "health"
-  | "explain";
+  | "explain"
+  | "summarize"
+  | "ephemeral_expire";
 
 export interface AuditRecord {
   ts: string;
   kind: AuditKind;
   payload: unknown;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Ephemeral memory (Phase-2: session summaries)                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Phase-2 introduces "ephemeral" memories: short-lived, AI-written records
+ * derived from session transcripts. Hard rules baked into the type system
+ * and the SQL schema:
+ *
+ *   * sourceKind is ALWAYS "assistant_inferred"
+ *   * confidence is ALWAYS < 1.0 (typically 0.5..0.8)
+ *   * expiresAt is REQUIRED
+ *   * citation is a `session://<sessionId>#range=...` URI, not a markdown path
+ *   * ephemeral memories live in `ephemeral_memories` / `ephemeral_chunks`,
+ *     never in `memories` / `chunks` / `chunk_vectors`
+ *
+ * Promotion to a persistent Memory is a v0.3 feature; v0.2 ships read+write
+ * for ephemeral but no promotion path.
+ */
+export interface EphemeralMemory {
+  schemaVersion: typeof SCHEMA_VERSION;
+  memoryId: string;
+  /** Which OpenClaw session this came from. */
+  sessionId: string;
+  memoryType: "episode" | "decision" | "fact" | "preference" | "summary";
+  summary: string;
+  importance: number;
+  /** 0.0 .. 0.99; clamped at index time. */
+  confidence: number;
+  /** `session://<sessionId>#range=<isoStart>-<isoEnd>` */
+  citation: string;
+  /** Original transcript excerpt that backed this memory (optional, audit-only). */
+  rawExcerpt?: string;
+  scope: Scope;
+  status: "active" | "expired";
+  /** ISO 8601. */
+  createdAt: string;
+  /** ISO 8601. */
+  expiresAt: string;
+  hash: string;
+  /** Always "assistant_inferred" — kept explicit for clarity at call sites. */
+  sourceKind: "assistant_inferred";
+}
+
+export interface EphemeralChunk {
+  chunkId: string;
+  memoryId: string;
+  text: string;
+  embeddingModelId: string;
+  hash: string;
+  /** ISO 8601, mirrors the parent memory. */
+  expiresAt: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -249,6 +305,17 @@ export interface OsmConfig {
   audit: {
     enabled: boolean;
   };
+  /** Phase-2 ephemeral (session summary) layer. */
+  ephemeral?: {
+    /** Default TTL for newly-ingested summaries, in days. */
+    ttlDays: number;
+    /** Retrieval weight (vs persistent = 1.0). Recommended 0.85. */
+    retrievalWeight: number;
+    /** Minimum confidence to surface in retrieval. */
+    minConfidence: number;
+    /** Summarizer model alias (resolved against OpenClaw). */
+    summarizerModel: string;
+  };
 }
 
 export const DEFAULT_CONFIG: OsmConfig = {
@@ -275,5 +342,11 @@ export const DEFAULT_CONFIG: OsmConfig = {
   },
   audit: {
     enabled: true,
+  },
+  ephemeral: {
+    ttlDays: 90,
+    retrievalWeight: 0.85,
+    minConfidence: 0.5,
+    summarizerModel: "jeniya/gpt-5.4",
   },
 };

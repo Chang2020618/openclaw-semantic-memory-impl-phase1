@@ -18,6 +18,9 @@ export interface SearchArgs {
   json: boolean;
   debug: boolean;
   providerOverride?: string;
+  /** Phase-2: toggle ephemeral fan-out. Defaults to true. */
+  noEphemeral?: boolean;
+  onlyEphemeral?: boolean;
 }
 
 export async function runSearch(args: SearchArgs): Promise<number> {
@@ -42,6 +45,10 @@ export async function runSearch(args: SearchArgs): Promise<number> {
   });
 
   try {
+    const ephemeralEnabled = !args.noEphemeral;
+    const ephemeralWeight = config.ephemeral?.retrievalWeight ?? 0.85;
+    const ephemeralMinConf = config.ephemeral?.minConfidence ?? 0.5;
+
     const retriever = new Retriever({
       store,
       provider,
@@ -51,6 +58,13 @@ export async function runSearch(args: SearchArgs): Promise<number> {
         minScore: config.retrieval.minScore,
         defaultScope: config.scope.defaultScope,
       },
+      ephemeral: ephemeralEnabled
+        ? {
+            enabled: true,
+            weight: args.onlyEphemeral ? 1.0 : ephemeralWeight,
+            minConfidence: ephemeralMinConf,
+          }
+        : { enabled: false, weight: 0, minConfidence: 1 },
     });
 
     const q: RetrievalQuery = {
@@ -59,6 +73,13 @@ export async function runSearch(args: SearchArgs): Promise<number> {
     };
 
     const response = await retriever.retrieve(q, { debug: args.debug });
+
+    // --only-ephemeral filter: drop persistent results post-hoc
+    if (args.onlyEphemeral) {
+      response.results = response.results.filter((r) =>
+        r.whyMatched.some((w) => w.includes("layer=ephemeral"))
+      );
+    }
 
     if (args.json) {
       console.log(JSON.stringify(response, null, 2));
@@ -78,7 +99,10 @@ export async function runSearch(args: SearchArgs): Promise<number> {
         `debug: candidates=${response.debug.candidates} ` +
           `semantic=${response.debug.topNSemantic} ` +
           `lexical=${response.debug.topNLexical} ` +
-          `rejected=${response.debug.rejected.length}`
+          `rejected=${response.debug.rejected.length}` +
+          (response.debug.ephemeralCandidates !== undefined
+            ? ` ephemeral=${response.debug.ephemeralAccepted}/${response.debug.ephemeralCandidates}`
+            : "")
       );
     }
     lines.push("");

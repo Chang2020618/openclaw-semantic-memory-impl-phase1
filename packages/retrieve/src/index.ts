@@ -23,12 +23,19 @@ import {
   type CandidateBundle,
 } from "./guardrails.js";
 import { hybridSearch, type HybridHit } from "./hybrid.js";
+import {
+  ephemeralHybridSearch,
+  ephemeralToResult,
+  type EphemeralHit,
+} from "./ephemeral.js";
 import { normalizeQuery, type NormalizedQuery } from "./query.js";
 import { buildWhyMatched } from "./why.js";
 
 export type { NormalizedQuery } from "./query.js";
 export { hybridSearch } from "./hybrid.js";
 export type { HybridHit } from "./hybrid.js";
+export { ephemeralHybridSearch, ephemeralToResult } from "./ephemeral.js";
+export type { EphemeralHit } from "./ephemeral.js";
 export { applyGuardrails } from "./guardrails.js";
 export type { CandidateBundle, GuardrailResult } from "./guardrails.js";
 export { buildWhyMatched } from "./why.js";
@@ -42,6 +49,16 @@ export interface RetrieverOptions {
     minScore: number;
     defaultScope: "global" | "project" | "channel" | "private";
   };
+  /**
+   * Phase-2 ephemeral retrieval settings. Omit to disable ephemeral search.
+   */
+  ephemeral?: {
+    enabled: boolean;
+    /** Retrieval weight relative to persistent (1.0). Recommended 0.85. */
+    weight: number;
+    /** Minimum confidence to surface. Default 0.5. */
+    minConfidence: number;
+  };
 }
 
 export interface RetrieveDebug {
@@ -49,6 +66,8 @@ export interface RetrieveDebug {
   rejected: Array<{ chunkId: string; reason: string }>;
   topNSemantic: number;
   topNLexical: number;
+  ephemeralCandidates?: number;
+  ephemeralAccepted?: number;
 }
 
 export class Retriever {
@@ -114,13 +133,40 @@ export class Retriever {
       .slice(0, normalized.topK);
 
     const queryLower = normalized.text.toLowerCase();
-    const results: RetrievalResult[] = ranked.map(({ c, h }) =>
+    const persistentResults: RetrievalResult[] = ranked.map(({ c, h }) =>
       assembleResult(c, h, queryLower, now)
     );
 
+    // Phase-2: ephemeral fan-out
+    let ephemeralResults: RetrievalResult[] = [];
+    let ephemeralCandidates = 0;
+    let ephemeralAccepted = 0;
+    if (this.opts.ephemeral?.enabled) {
+      const eHits: EphemeralHit[] = await ephemeralHybridSearch(
+        this.opts.store,
+        this.opts.provider,
+        normalized.text,
+        {
+          topN: normalized.topN,
+          minConfidence: this.opts.ephemeral.minConfidence,
+          nowIso: now.toISOString(),
+        }
+      );
+      ephemeralCandidates = eHits.length;
+      ephemeralResults = eHits.map((h) =>
+        ephemeralToResult(h, this.opts.ephemeral!.weight, now)
+      );
+      ephemeralAccepted = ephemeralResults.length;
+    }
+
+    // Merge persistent + ephemeral and re-sort by score.
+    const merged: RetrievalResult[] = [...persistentResults, ...ephemeralResults]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, normalized.topK);
+
     const response: RetrievalResponse & { debug?: RetrieveDebug } = {
       query: normalized.text,
-      results,
+      results: merged,
     };
 
     if (options?.debug) {
@@ -129,6 +175,8 @@ export class Retriever {
         rejected,
         topNSemantic: hits.filter((h) => h.semanticRank !== undefined).length,
         topNLexical: hits.filter((h) => h.lexicalRank !== undefined).length,
+        ephemeralCandidates,
+        ephemeralAccepted,
       };
     }
 
@@ -137,12 +185,15 @@ export class Retriever {
         query: normalized.text,
         topK: normalized.topK,
         topN: normalized.topN,
-        results: results.map((r) => ({
+        results: merged.map((r) => ({
           memoryId: r.memoryId,
           score: r.score,
           whyMatched: r.whyMatched,
         })),
         rejectedCount: rejected.length,
+        ephemeralEnabled: this.opts.ephemeral?.enabled ?? false,
+        ephemeralCandidates,
+        ephemeralAccepted,
       });
     }
 

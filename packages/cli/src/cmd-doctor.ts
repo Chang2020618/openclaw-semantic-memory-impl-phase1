@@ -27,6 +27,8 @@ export interface DoctorArgs {
   rootFlag: string | undefined;
   json: boolean;
   providerOverride?: string;
+  /** Phase-2: hard-delete expired ephemeral rows. */
+  vacuum?: boolean;
 }
 
 interface SignalResult {
@@ -228,6 +230,82 @@ export function runDoctor(args: DoctorArgs): number {
       });
     }
 
+    /* Phase-2 signals: ephemeral layer health */
+    const ephemeralCount = store.countEphemeralMemories();
+    const ephemeralByStatus = store.countEphemeralByStatus();
+    const nowIso = new Date(now).toISOString();
+
+    /* 9. ephemeral_total */
+    signals.push({
+      name: "ephemeral_total",
+      value: ephemeralCount,
+      status: "ok",
+      detail:
+        ephemeralCount === 0
+          ? "no session summaries indexed yet"
+          : `active=${ephemeralByStatus["active"] ?? 0} expired=${
+              ephemeralByStatus["expired"] ?? 0
+            }`,
+    });
+
+    /* 10. ephemeral_expired */
+    {
+      // Count rows whose expires_at < now, regardless of status flag —
+      // covers both "expired" status and stale rows we haven't marked yet.
+      const overdue = countOverdueEphemeral(store, nowIso);
+      signals.push({
+        name: "ephemeral_expired",
+        value: overdue,
+        status:
+          overdue === 0
+            ? "ok"
+            : args.vacuum
+            ? "ok"
+            : overdue > 50
+            ? "warn"
+            : "ok",
+        detail:
+          overdue === 0
+            ? "none"
+            : `${overdue} past TTL — run \`osm doctor --vacuum\` to delete`,
+      });
+    }
+
+    /* 11. ephemeral_avg_confidence */
+    {
+      const conf = avgEphemeralConfidence(store);
+      signals.push({
+        name: "ephemeral_avg_confidence",
+        value: conf === null ? null : round3(conf),
+        status:
+          conf === null
+            ? "unknown"
+            : conf < 0.55
+            ? "warn"
+            : "ok",
+        detail:
+          conf === null
+            ? "no ephemeral memories"
+            : conf < 0.55
+            ? "low — summarizer may be guessing too aggressively"
+            : `mean=${conf.toFixed(2)} (clamped to [0.5, 0.8])`,
+      });
+    }
+
+    /* If --vacuum requested, hard-delete past-TTL rows */
+    let vacuumed: { memories: number; chunks: number } | null = null;
+    if (args.vacuum) {
+      // First mark any active rows whose expires_at < now as expired.
+      store.markExpiredEphemeral(nowIso);
+      vacuumed = store.vacuumExpiredEphemeral(nowIso);
+      store.appendAudit("ephemeral_expire", {
+        action: "vacuum",
+        nowIso,
+        memoriesDeleted: vacuumed.memories,
+        chunksDeleted: vacuumed.chunks,
+      });
+    }
+
     const failed = signals.some((s) => s.status === "fail");
 
     if (args.json) {
@@ -242,8 +320,11 @@ export function runDoctor(args: DoctorArgs): number {
               chunks: store.countChunks(),
               memoriesByStatus: store.countMemoriesByStatus(),
               memoriesBySourceKind: store.countMemoriesBySourceKind(),
+              ephemeralMemories: ephemeralCount,
+              ephemeralByStatus,
             },
             signals,
+            vacuumed,
           },
           null,
           2
@@ -251,6 +332,11 @@ export function runDoctor(args: DoctorArgs): number {
       );
     } else {
       printHuman(paths, config, providerId, store, signals);
+      if (vacuumed) {
+        console.log(
+          `\nvacuum: deleted ${vacuumed.memories} memories and ${vacuumed.chunks} chunks past TTL.`
+        );
+      }
     }
 
     store.appendAudit("health", { signals });
@@ -263,6 +349,16 @@ export function runDoctor(args: DoctorArgs): number {
 
 function listMemoryRows(store: OsmStore): Array<{ memory_id: string }> {
   return store.listMemoryIdsWithChunks().map((id) => ({ memory_id: id }));
+}
+
+function countOverdueEphemeral(store: OsmStore, nowIso: string): number {
+  // Use the raw db handle via a public helper if available; otherwise list
+  // by status + manual filter. We expose this through store API.
+  return store.countEphemeralOverdue(nowIso);
+}
+
+function avgEphemeralConfidence(store: OsmStore): number | null {
+  return store.avgEphemeralConfidence();
 }
 
 function sourceAbs(paths: ReturnType<typeof resolveWorkspace>, rel: string): string {
