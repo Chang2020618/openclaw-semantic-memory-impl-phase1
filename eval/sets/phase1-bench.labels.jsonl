@@ -1,0 +1,5 @@
+{"caseId":"flutter-apk","verdict":"ok"}
+{"caseId":"salesradar-ebnew","verdict":"ok"}
+{"caseId":"salesradar-deploy","verdict":"ok"}
+{"caseId":"content-adapter-stack","verdict":"wrong","notes":"top result is unrelated docker note"}
+{"caseId":"unified-ui","verdict":"wrong"}

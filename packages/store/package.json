@@ -1,0 +1,28 @@
+{
+  "name": "@osm/store",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema.sql": "./src/schema.sql"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/schema.sql dist/schema.sql",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@osm/core": "workspace:*",
+    "better-sqlite3": "^12.4.1",
+    "sqlite-vec": "^0.1.9"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11"
+  }
+}

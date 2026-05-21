@@ -1,0 +1,12 @@
+{"id":"flutter-apk","query":"Flutter APK 打包 WSL Android","expectedMemoryIds":["mem_c459349fac572d3f4e41020f"],"intent":"event_recall","notes":"2026-05-19 Flutter/Android APK build environment progress"}
+{"id":"salesradar-ebnew","query":"ebnew 招标爬虫 SalesRadar","expectedMemoryIds":["mem_c459349fac572d3f4e41020f"],"intent":"event_recall","notes":"new tender crawlers added under SalesRadar"}
+{"id":"salesradar-deploy","query":"SalesRadar 前端 部署 静态包 Flutter Web","expectedMemoryIds":["mem_c459349fac572d3f4e41020f","mem_36fd61717374e056204a445e"],"intent":"decision_recall","notes":"VPS does not install Flutter, frontend must be built locally"}
+{"id":"content-adapter-stack","query":"content-adapter Next.js FastAPI 自媒体","expectedMemoryIds":["mem_01ea6bc6b80a98b7f8efd854"],"intent":"fact_recall","notes":"content-adapter project tech stack"}
+{"id":"content-adapter-business","query":"content-adapter 商业模式 Freemium 付费","expectedMemoryIds":["mem_01ea6bc6b80a98b7f8efd854"],"intent":"fact_recall","notes":"content-adapter freemium 29/99 pricing"}
+{"id":"openclaw-models","query":"OpenClaw 默认模型 GPT-5-Jeniya 配置","expectedMemoryIds":["mem_59007a94d516b47248ebdaf4","mem_8e0824cdbfcebf8b3962e090"],"intent":"fact_recall","notes":"opus/sonnet 4.6 added to fallbacks"}
+{"id":"semantic-memory-repo","query":"OpenClaw Semantic Memory 设计仓库 v0.1 设计冻结","expectedMemoryIds":["mem_faa61fff14a55d30e801777c","mem_70cd68e0a8ce8822d89b15ab"],"intent":"event_recall","notes":"semantic memory design repo frozen"}
+{"id":"disk-partition","query":"新电脑分区 C盘 D盘 E盘 WSL","expectedMemoryIds":["mem_30751fbc85468a405b93fe54"],"intent":"preference_recall","notes":"disk partitioning convention"}
+{"id":"meeting-roles","query":"GPT Claude Kimi 角色分工 CTO CEO COO","expectedMemoryIds":["mem_30751fbc85468a405b93fe54"],"intent":"decision_recall","notes":"multi-agent role assignment"}
+{"id":"unified-ui","query":"统一 UI 工作台 小本 小云 双消息流","expectedMemoryIds":["mem_30751fbc85468a405b93fe54"],"intent":"decision_recall","notes":"unified workbench MVP plan"}
+{"id":"midchannel-error","query":"中转台通道 模型不匹配 鉴权错误","expectedMemoryIds":["mem_e20de0b8ebf8d07ecbd45440"],"intent":"fact_recall","notes":"transit channel model mismatch troubleshooting"}
+{"id":"fish-app","query":"渔业 App ZXD000 项目路径","expectedMemoryIds":["mem_51158281c518c64e32c30f64","mem_b5488be78d91358138744543"],"intent":"fact_recall","notes":"fishery project path"}
