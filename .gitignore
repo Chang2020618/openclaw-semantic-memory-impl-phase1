@@ -33,3 +33,4 @@ coverage/
 .cache/
 *.db
 *.db-journal
+PUSH-TO-GITHUB.md
