@@ -347,6 +347,6 @@ export const DEFAULT_CONFIG: OsmConfig = {
     ttlDays: 90,
     retrievalWeight: 0.85,
     minConfidence: 0.5,
-    summarizerModel: "jeniya/gpt-5.4",
+    summarizerModel: "jeniya/gpt-5.4-mini",
   },
 };

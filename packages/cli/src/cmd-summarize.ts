@@ -148,7 +148,7 @@ export async function runSummarize(args: SummarizeArgs): Promise<number> {
     }
 
     const model =
-      args.modelOverride ?? config.ephemeral?.summarizerModel ?? "jeniya/gpt-5.4";
+      args.modelOverride ?? config.ephemeral?.summarizerModel ?? "jeniya/gpt-5.4-mini";
 
     const report = await ingestSession({
       sessionFile,
