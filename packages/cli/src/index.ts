@@ -16,6 +16,7 @@ import { runWatch } from "./cmd-watch.js";
 import { runEvalCmd } from "./cmd-eval.js";
 import { runSummarize } from "./cmd-summarize.js";
 import { runSummarizeWatch } from "./cmd-summarize-watch.js";
+import { runPanel } from "./cmd-panel.js";
 
 const VERSION = "0.1.0-dev";
 
@@ -79,6 +80,7 @@ function printHelp(): void {
     "  summarize ... --prompt-only      print the prompt; do not call LLM",
     "  summarize ... --ingest-file <f>  skip LLM, ingest JSON from <f>",
     "  summarize-watch         watch OpenClaw sessions and auto-summarize",
+    "  panel                 print memory panel data (persistent + ephemeral)",
     "  version               print version and exit",
     "  help                  print this help",
     "",
@@ -90,6 +92,8 @@ function printHelp(): void {
     "  --json                with `search`/`explain`/`doctor`: emit raw JSON",
     "  --debug               with `search`: include debug counters",
     "  --skip-weak-query     with `search`: return empty for weak acknowledgements",
+    "  --limit <n>           with `panel`: max recent ephemeral rows (default 10)",
+    "  --query <text>         with `panel`: include live retrieval debug for a query",
     "  --audit-limit <n>     with `explain`: max recent audit hits to show",
     "",
     "Phase-1 status: M6. See ../openclaw-semantic-memory/docs/20-phase1-reference-impl.md.",
@@ -270,6 +274,17 @@ async function main(argv: string[]): Promise<number> {
           typeof coldStartMaxAgeMs === "number" && Number.isFinite(coldStartMaxAgeMs) && coldStartMaxAgeMs >= 0
             ? coldStartMaxAgeMs
             : undefined,
+      });
+    }
+
+    case "panel": {
+      const limitRaw = flags["limit"];
+      const limit = typeof limitRaw === "string" ? Number.parseInt(limitRaw, 10) : undefined;
+      return await runPanel({
+        rootFlag: rootFlagOf(flags),
+        json: Boolean(flags["json"]),
+        limit: typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? limit : undefined,
+        query: typeof flags["query"] === "string" ? flags["query"] : undefined,
       });
     }
 

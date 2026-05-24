@@ -1,0 +1,131 @@
+{
+  "persistent": {
+    "total": 74,
+    "byStatus": {
+      "active": 74
+    },
+    "bySourceKind": {
+      "human_confirmed": 74
+    }
+  },
+  "ephemeral": {
+    "total": 272,
+    "byStatus": {
+      "active": 272
+    },
+    "overdue": 0,
+    "avgConfidence": 0.7688970588235294,
+    "recent": [
+      {
+        "memoryId": "eph_8c277f23ea44d81e093e3315",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "preference",
+        "summary": "用户偏好按优先级顺序推进工作，并在确认继续做某项功能时，常倾向于先把能交付/可验收的结果落档，再做后续优化；对‘先做可见产品能力’的方向表现出明确接受。",
+        "confidence": 0.66,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T05%3A55%3A59.499Z-2026-05-24T05%3A56%3A04.581Z",
+        "createdAt": "2026-05-24T09:36:33.910Z",
+        "expiresAt": "2026-08-22T09:36:33.898Z"
+      },
+      {
+        "memoryId": "eph_8472ff6bfcfebcd4ed40f6e9",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "fact",
+        "summary": "已生成 memory panel 的静态 Canvas/demo 页面与数据文件，路径为 `/root/.openclaw/canvas/osm-memory-panel/index.html` 和 `/root/.openclaw/canvas/osm-memory-panel/data.json`；但本机浏览器打开时曾被策略阻拦。",
+        "confidence": 0.67,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T09%3A02%3A55.404Z-2026-05-24T09%3A12%3A17.060Z",
+        "createdAt": "2026-05-24T09:36:33.909Z",
+        "expiresAt": "2026-08-22T09:36:33.898Z"
+      },
+      {
+        "memoryId": "eph_b62944e6f20ccf33a4948afa",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "fact",
+        "summary": "已新增 CLI 面板命令 `osm panel --json`，可输出 persistent/ephemeral 的统计、最近 ephemeral 记忆列表，并在带 query 时附带 retrieval debug（query、results、score、confidence、whyMatched、debug counters）。",
+        "confidence": 0.77,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T08%3A40%3A12.586Z-2026-05-24T08%3A46%3A48.267Z",
+        "createdAt": "2026-05-24T09:36:33.908Z",
+        "expiresAt": "2026-08-22T09:36:33.898Z"
+      },
+      {
+        "memoryId": "eph_1498f24514edc184b9ed80dd",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "decision",
+        "summary": "产品化优先级被定为：先做记忆可视化面板，再做记忆治理（确认/删除/晋升），最后做质量闭环与调参指标；其中用户明确认同先做‘记忆面板 + API’，但随后又改为先做 CLI 级面板数据命令和检索 debug 合并输出。",
+        "confidence": 0.72,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T08%3A34%3A47.944Z-2026-05-24T08%3A40%3A12.586Z",
+        "createdAt": "2026-05-24T09:36:33.907Z",
+        "expiresAt": "2026-08-22T09:36:33.898Z"
+      },
+      {
+        "memoryId": "eph_6ff8577cfab0e6a74b47dc42",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "fact",
+        "summary": "用户目前拥有的是一个能自动沉淀、自动检索、并接入 OpenClaw 主对话工作流的向量记忆系统；它更偏向近期/中期语义记忆，而不是永久的人格级长期记忆。",
+        "confidence": 0.76,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T08%3A07%3A42.492Z-2026-05-24T08%3A07%3A42.492Z",
+        "createdAt": "2026-05-24T09:36:33.906Z",
+        "expiresAt": "2026-08-22T09:36:33.898Z"
+      },
+      {
+        "memoryId": "eph_3e7f13d7f10ee9878c406c65",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "fact",
+        "summary": "当前系统已拥有可工作的向量记忆：能自动写入 ephemeral memories、能在 before_prompt_build 自动检索并注入上下文、并通过 agent_end -> enqueue -> summarize-watch -> flush 的自动化链路运转。",
+        "confidence": 0.78,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T08%3A05%3A19.247Z-2026-05-24T08%3A05%3A30.082Z",
+        "createdAt": "2026-05-24T09:36:33.905Z",
+        "expiresAt": "2026-08-22T09:36:33.898Z"
+      },
+      {
+        "memoryId": "eph_6943653a4404e23a3cf8a6f6",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "fact",
+        "summary": "Phase-3 最终自动化验收已通过：OpenClaw 插件接入、before_prompt_build 检索注入、agent_end 入队、summarize-watch flush、解析容错、active-memory 过滤、error 停止重试都已完成，主会话自动 flush 成功并写入 8 条 ephemeral memory。",
+        "confidence": 0.79,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T07%3A24%3A33.691Z-2026-05-24T07%3A50%3A46.142Z",
+        "createdAt": "2026-05-24T09:36:33.903Z",
+        "expiresAt": "2026-08-22T09:36:33.898Z"
+      },
+      {
+        "memoryId": "eph_e33d4bf5391c64c2797689d4",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "decision",
+        "summary": "用户决定把接下来的优先级定为：1) 先收尾文档/验收记录；2) 再做检索质量微调；3) 最后补 summarize 自动化。并要求按这个顺序推进。",
+        "confidence": 0.78,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T05%3A55%3A59.499Z-2026-05-24T05%3A56%3A04.581Z",
+        "createdAt": "2026-05-24T09:36:33.899Z",
+        "expiresAt": "2026-08-22T09:36:33.898Z"
+      },
+      {
+        "memoryId": "eph_4918baee9e4a98d08a431ef8",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "preference",
+        "summary": "User prefers to stop validating and instead continue finishing the remaining work, then later wanted the final results documented and committed. The user also explicitly prioritized the three productization tasks in order and later asked to continue them directly.",
+        "confidence": 0.69,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T04%3A40%3A32.315Z-2026-05-24T04%3A40%3A32.315Z",
+        "createdAt": "2026-05-24T09:16:10.741Z",
+        "expiresAt": "2026-08-22T09:16:10.718Z"
+      },
+      {
+        "memoryId": "eph_f022fb281685f4ecb5b5209c",
+        "sessionId": "a2896482-cc9f-4cde-84ee-bfb24f3f08d9",
+        "memoryType": "fact",
+        "summary": "The implementation was finalized with a Phase-3 doc update, a git commit `40401e5` named `feat: automate phase-3 summarize queue flow`, and the branch was pushed to the remote phase-2 branch.",
+        "confidence": 0.73,
+        "status": "active",
+        "citation": "session://a2896482-cc9f-4cde-84ee-bfb24f3f08d9#range=2026-05-24T07%3A53%3A21.549Z-2026-05-24T07%3A54%3A59.630Z",
+        "createdAt": "2026-05-24T09:16:10.740Z",
+        "expiresAt": "2026-08-22T09:16:10.718Z"
+      }
+    ]
+  }
+}

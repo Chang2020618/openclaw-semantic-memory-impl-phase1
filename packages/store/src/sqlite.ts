@@ -721,6 +721,14 @@ export class OsmStore {
       .all(sessionId) as EphemeralMemoryRow[];
   }
 
+  listRecentEphemeral(limit: number): EphemeralMemoryRow[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM ephemeral_memories ORDER BY created_at DESC LIMIT ?"
+      )
+      .all(limit) as EphemeralMemoryRow[];
+  }
+
   ephemeralChunkById(chunkId: string): EphemeralChunkRow | null {
     const row = this.db
       .prepare("SELECT * FROM ephemeral_chunks WHERE chunk_id = ?")
