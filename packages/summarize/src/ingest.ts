@@ -62,6 +62,8 @@ export interface IngestReport {
   durationMs: number;
   /** memoryIds written. */
   ingestedIds: string[];
+  /** memoryIds skipped because they already existed for this session digest. */
+  skippedIds?: string[];
 }
 
 const DEFAULT_TTL_DAYS = 90;
@@ -98,7 +100,7 @@ export async function ingestSession(
 
   const candidates = parseSummaries(llmResp.text);
 
-  const ingestedIds = await persistCandidates({
+  const persisted = await persistCandidates({
     candidates,
     transcript,
     store: opts.store,
@@ -114,7 +116,8 @@ export async function ingestSession(
     turnCount: transcript.turns.length,
     trimmed: transcript.trimmed,
     summariesProposed: candidates.length,
-    summariesAccepted: ingestedIds.length,
+    summariesAccepted: persisted.ingestedIds.length,
+    summariesSkipped: persisted.skippedIds.length,
     llmTokensUsed: llmResp.usage?.totalTokens,
     embeddingModelId: opts.embedding.id,
   });
@@ -129,13 +132,14 @@ export async function ingestSession(
       endTs: transcript.endTs,
     },
     summariesProposed: candidates.length,
-    summariesAccepted: ingestedIds.length,
-    embeddingsRequested: ingestedIds.length,
+    summariesAccepted: persisted.ingestedIds.length,
+    embeddingsRequested: persisted.ingestedIds.length,
     ...(llmResp.usage?.totalTokens !== undefined && {
       llmTokensUsed: llmResp.usage.totalTokens,
     }),
     durationMs: Date.now() - t0,
-    ingestedIds,
+    ingestedIds: persisted.ingestedIds,
+    skippedIds: persisted.skippedIds,
   };
 }
 
@@ -146,23 +150,16 @@ async function persistCandidates(args: {
   embedding: EmbeddingProvider;
   ttlDays: number;
   scope: Scope;
-}): Promise<string[]> {
-  if (args.candidates.length === 0) return [];
+}): Promise<{ ingestedIds: string[]; skippedIds: string[] }> {
+  if (args.candidates.length === 0) return { ingestedIds: [], skippedIds: [] };
 
-  const texts = args.candidates.map((c) => c.summary);
-  const vectors = await args.embedding.embed(texts);
-
-  const ingestedIds: string[] = [];
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
   const expiresIso = new Date(
     nowMs + args.ttlDays * 24 * 60 * 60 * 1000
   ).toISOString();
 
-  for (let i = 0; i < args.candidates.length; i += 1) {
-    const c = args.candidates[i]!;
-    const vector = vectors[i]!;
-
+  const items = args.candidates.map((c) => {
     const contentBasis = JSON.stringify({
       sessionId: args.transcript.sessionId,
       type: c.type,
@@ -173,6 +170,32 @@ async function persistCandidates(args: {
     const hash = sha256Hex(contentBasis);
     const memoryId = `eph_${hash.slice(0, 24)}`;
     const chunkId = `eph_chk_${hash.slice(0, 24)}`;
+    return { c, hash, memoryId, chunkId };
+  });
+
+  const existing = new Set(
+    args.store
+      .listEphemeralBySession(args.transcript.sessionId)
+      .map((m) => m.memory_id)
+  );
+
+  const pending = items.filter((item) => !existing.has(item.memoryId));
+  const skippedIds = items
+    .filter((item) => existing.has(item.memoryId))
+    .map((item) => item.memoryId);
+
+  if (pending.length === 0) {
+    return { ingestedIds: [], skippedIds };
+  }
+
+  const vectors = await args.embedding.embed(pending.map((item) => item.c.summary));
+
+  const ingestedIds: string[] = [];
+
+  for (let i = 0; i < pending.length; i += 1) {
+    const item = pending[i]!;
+    const vector = vectors[i]!;
+    const c = item.c;
 
     const citation = `session://${args.transcript.sessionId}#range=${encodeURIComponent(
       c.timeStart || args.transcript.startTs
@@ -180,7 +203,7 @@ async function persistCandidates(args: {
 
     const memory: EphemeralMemory = {
       schemaVersion: 1,
-      memoryId,
+      memoryId: item.memoryId,
       sessionId: args.transcript.sessionId,
       memoryType: c.type,
       summary: c.summary,
@@ -192,23 +215,23 @@ async function persistCandidates(args: {
       status: "active",
       createdAt: nowIso,
       expiresAt: expiresIso,
-      hash,
+      hash: item.hash,
       sourceKind: "assistant_inferred",
     };
 
     const chunk: EphemeralChunk = {
-      chunkId,
-      memoryId,
+      chunkId: item.chunkId,
+      memoryId: item.memoryId,
       text: c.summary,
       embeddingModelId: args.embedding.id,
-      hash,
+      hash: item.hash,
       expiresAt: expiresIso,
     };
 
     args.store.upsertEphemeral(memory, chunk, vector);
-    ingestedIds.push(memoryId);
+    ingestedIds.push(item.memoryId);
   }
-  return ingestedIds;
+  return { ingestedIds, skippedIds };
 }
 
 function sha256Hex(s: string): string {

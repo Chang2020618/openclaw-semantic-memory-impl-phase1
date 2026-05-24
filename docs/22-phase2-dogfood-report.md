@@ -133,3 +133,16 @@ Total ~4.8 KLoC → ~5.5 KLoC.
 2. Wire real LLM (`OSM_OPENAI_API_KEY` against jeniya middleman) and
    re-run summarize on this same session — compare hand vs LLM candidates.
 3. Open the Phase-3 charter: OpenClaw runtime hook + promotion UX.
+
+
+---
+
+## Phase-3 follow-up note (2026-05-24)
+
+Phase-2 的 retrieval / summarize 基础设施后来已在 OpenClaw 真宿主里完成最小接入验证：
+- retrieval 通过 `before_prompt_build` 插件 hook 真实触发
+- summarize side 通过 `agent_end` 真实触发 marker
+- local-onnx (`Xenova/multilingual-e5-small`, 384 dims) rebuild 成功
+- `retrieve_result.jsonl` 已产出真实 ephemeral hits，说明 Phase-2 的 dual-source retrieval 能被宿主插件链路直接复用
+
+详见：`docs/23-phase3-openclaw-core-integration.md` 的 “P3-3b 实际验收结果（2026-05-24）”。

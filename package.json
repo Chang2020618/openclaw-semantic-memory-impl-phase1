@@ -9,13 +9,14 @@
   },
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "build": "pnpm --filter @osm/core build && pnpm --filter @osm/store build && pnpm --filter @osm/chunker build && pnpm --filter @osm/embed build && pnpm --filter @osm/capture build && pnpm --filter @osm/retrieve build && pnpm --filter @osm/eval build && pnpm --filter @osm/summarize build && pnpm --filter @osm/cli build",
+    "build": "pnpm --filter @osm/core build && pnpm --filter @osm/store build && pnpm --filter @osm/chunker build && pnpm --filter @osm/embed build && pnpm --filter @osm/capture build && pnpm --filter @osm/retrieve build && pnpm --filter @osm/eval build && pnpm --filter @osm/summarize build && pnpm --filter @osm/cli build && pnpm --filter @osm/openclaw-plugin build",
     "build:all": "pnpm -r build",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
-    "typecheck": "pnpm --filter @osm/core typecheck && pnpm --filter @osm/store typecheck && pnpm --filter @osm/chunker typecheck && pnpm --filter @osm/embed typecheck && pnpm --filter @osm/capture typecheck && pnpm --filter @osm/retrieve typecheck && pnpm --filter @osm/eval typecheck && pnpm --filter @osm/summarize typecheck && pnpm --filter @osm/cli typecheck",
+    "typecheck": "pnpm --filter @osm/core typecheck && pnpm --filter @osm/store typecheck && pnpm --filter @osm/chunker typecheck && pnpm --filter @osm/embed typecheck && pnpm --filter @osm/capture typecheck && pnpm --filter @osm/retrieve typecheck && pnpm --filter @osm/eval typecheck && pnpm --filter @osm/summarize typecheck && pnpm --filter @osm/cli typecheck && pnpm --filter @osm/openclaw-plugin typecheck",
     "test": "pnpm -r test",
     "lint": "echo 'lint not configured yet'",
-    "osm": "node packages/cli/dist/index.js"
+    "osm": "node packages/cli/dist/index.js",
+    "summarize-watch": "node packages/cli/dist/index.js summarize-watch --root /root/.openclaw/workspace --agent main --idle-ms 180000 --settle-ms 5000 --cold-start-max-age-ms 0"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

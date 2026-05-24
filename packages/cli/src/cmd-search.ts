@@ -21,6 +21,26 @@ export interface SearchArgs {
   /** Phase-2: toggle ephemeral fan-out. Defaults to true. */
   noEphemeral?: boolean;
   onlyEphemeral?: boolean;
+  /** Skip retrieval entirely for weak acknowledgements / continuation nudges. */
+  skipWeakQuery?: boolean;
+}
+
+const WEAK_QUERY_PATTERNS = [
+  /^同意[了啊呀吗嘛]?$/,
+  /^继续([吧呀哈]?)$/,
+  /^好([的啊呀吧哈]?)[!！]?$/,
+  /^收到[了]?[!！]?$/,
+  /^嗯[嗯啊呀]?$/,
+  /^ok[.!! ]*$/i,
+  /^好的继续$/,
+  /^现在我接下来该做什么[？?]?$/,
+];
+
+function isWeakQuery(query: string): boolean {
+  const text = query.trim();
+  if (!text) return true;
+  if (text.length <= 2) return true;
+  return WEAK_QUERY_PATTERNS.some((re) => re.test(text));
 }
 
 export async function runSearch(args: SearchArgs): Promise<number> {
@@ -45,6 +65,16 @@ export async function runSearch(args: SearchArgs): Promise<number> {
   });
 
   try {
+    if (args.skipWeakQuery && isWeakQuery(args.query)) {
+      const response = { query: args.query, results: [] };
+      if (args.json) {
+        console.log(JSON.stringify(response, null, 2));
+      } else {
+        console.log(`osm: skipped weak query "${args.query}"`);
+      }
+      return 0;
+    }
+
     const ephemeralEnabled = !args.noEphemeral;
     const ephemeralWeight = config.ephemeral?.retrievalWeight ?? 0.85;
     const ephemeralMinConf = config.ephemeral?.minConfidence ?? 0.5;

@@ -1,0 +1,16 @@
+[Unit]
+Description=OpenClaw Semantic Memory summarize-watch
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/.openclaw/workspace/openclaw-semantic-memory-impl
+Environment=HOME=/root
+ExecStart=/bin/sh -lc 'cd /root/.openclaw/workspace/openclaw-semantic-memory-impl && set -a && . ./.env && export OSM_EMBED_API_KEY="$OSM_OPENAI_API_KEY" OPENAI_API_KEY="$OSM_OPENAI_API_KEY" OSM_EMBED_BASE_URL="$OSM_OPENAI_BASE_URL" OPENAI_BASE_URL="$OSM_OPENAI_BASE_URL" && pnpm run summarize-watch'
+Restart=always
+RestartSec=5
+StandardOutput=append:/root/.openclaw/workspace/openclaw-semantic-memory-impl/.run-logs/summarize-watch.service.log
+StandardError=append:/root/.openclaw/workspace/openclaw-semantic-memory-impl/.run-logs/summarize-watch.service.log
+
+[Install]
+WantedBy=default.target

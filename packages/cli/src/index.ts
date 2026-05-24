@@ -15,6 +15,7 @@ import { runDoctor } from "./cmd-doctor.js";
 import { runWatch } from "./cmd-watch.js";
 import { runEvalCmd } from "./cmd-eval.js";
 import { runSummarize } from "./cmd-summarize.js";
+import { runSummarizeWatch } from "./cmd-summarize-watch.js";
 
 const VERSION = "0.1.0-dev";
 
@@ -77,6 +78,7 @@ function printHelp(): void {
     "  summarize --session-file <path>  same, but explicit jsonl path",
     "  summarize ... --prompt-only      print the prompt; do not call LLM",
     "  summarize ... --ingest-file <f>  skip LLM, ingest JSON from <f>",
+    "  summarize-watch         watch OpenClaw sessions and auto-summarize",
     "  version               print version and exit",
     "  help                  print this help",
     "",
@@ -87,6 +89,7 @@ function printHelp(): void {
     "  --top-k <n>           with `search`: number of results",
     "  --json                with `search`/`explain`/`doctor`: emit raw JSON",
     "  --debug               with `search`: include debug counters",
+    "  --skip-weak-query     with `search`: return empty for weak acknowledgements",
     "  --audit-limit <n>     with `explain`: max recent audit hits to show",
     "",
     "Phase-1 status: M6. See ../openclaw-semantic-memory/docs/20-phase1-reference-impl.md.",
@@ -152,6 +155,7 @@ async function main(argv: string[]): Promise<number> {
         debug: Boolean(flags["debug"]),
         noEphemeral: Boolean(flags["no-ephemeral"]),
         onlyEphemeral: Boolean(flags["only-ephemeral"]),
+        skipWeakQuery: Boolean(flags["skip-weak-query"]),
         providerOverride:
           typeof flags["provider"] === "string" ? flags["provider"] : undefined,
       });
@@ -243,6 +247,29 @@ async function main(argv: string[]): Promise<number> {
             ? flags["ingest-file"]
             : undefined,
         json: Boolean(flags["json"]),
+      });
+    }
+
+    case "summarize-watch": {
+      const idleRaw = flags["idle-ms"];
+      const settleRaw = flags["settle-ms"];
+      const ttlRaw = flags["ttl-days"];
+      const coldStartRaw = flags["cold-start-max-age-ms"];
+      const idleMs = typeof idleRaw === "string" ? Number.parseInt(idleRaw, 10) : undefined;
+      const settleMs = typeof settleRaw === "string" ? Number.parseInt(settleRaw, 10) : undefined;
+      const ttl = typeof ttlRaw === "string" ? Number.parseInt(ttlRaw, 10) : undefined;
+      const coldStartMaxAgeMs = typeof coldStartRaw === "string" ? Number.parseInt(coldStartRaw, 10) : undefined;
+      return await runSummarizeWatch({
+        rootFlag: rootFlagOf(flags),
+        agentId: typeof flags["agent"] === "string" ? flags["agent"] : undefined,
+        idleMs: typeof idleMs === "number" && Number.isFinite(idleMs) && idleMs > 0 ? idleMs : undefined,
+        settleMs: typeof settleMs === "number" && Number.isFinite(settleMs) && settleMs > 0 ? settleMs : undefined,
+        ttlDays: typeof ttl === "number" && Number.isFinite(ttl) && ttl > 0 ? ttl : undefined,
+        modelOverride: typeof flags["model"] === "string" ? flags["model"] : undefined,
+        coldStartMaxAgeMs:
+          typeof coldStartMaxAgeMs === "number" && Number.isFinite(coldStartMaxAgeMs) && coldStartMaxAgeMs >= 0
+            ? coldStartMaxAgeMs
+            : undefined,
       });
     }
 

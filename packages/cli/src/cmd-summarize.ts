@@ -10,9 +10,9 @@
  *   5. embed + persist to ephemeral_*
  */
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { makeEmbeddingProvider } from "@osm/embed";
 import { OsmStore } from "@osm/store";
@@ -45,6 +45,26 @@ export interface SummarizeArgs {
   ingestFile?: string;
   json: boolean;
 }
+
+export interface SummarizeQueueEntry {
+  sessionId?: string;
+  sessionKey?: string;
+  agentId: string;
+  queuedAt: string;
+  updatedAt: string;
+  nextRunAt: string;
+  durationMs?: number;
+  ttlDays?: number;
+  model?: string;
+  settleMs?: number;
+  idleMs?: number;
+  status: "queued" | "running" | "done" | "error";
+  lastError?: string;
+  lastRunAt?: string;
+  lastSuccessAt?: string;
+}
+
+export type SummarizeQueueFile = Record<string, SummarizeQueueEntry>;
 
 export async function runSummarize(args: SummarizeArgs): Promise<number> {
   const paths = resolveWorkspace(args.rootFlag);
@@ -198,6 +218,43 @@ function resolveSessionFile(args: SummarizeArgs): string | null {
     `${args.sessionId}.jsonl`
   );
   return file;
+}
+
+export function getSummarizeQueuePath(rootFlag: string | undefined): string {
+  const root = rootFlag ?? join(homedir(), ".openclaw", "workspace");
+  return join(root, ".cache", "osm", "plugin-markers", "summarize-queue.json");
+}
+
+export function loadSummarizeQueue(rootFlag: string | undefined): SummarizeQueueFile {
+  return loadJsonFile(getSummarizeQueuePath(rootFlag), {});
+}
+
+export function saveSummarizeQueue(rootFlag: string | undefined, queue: SummarizeQueueFile): void {
+  writeJsonFile(getSummarizeQueuePath(rootFlag), queue);
+}
+
+export function appendSummarizeQueueMarker(
+  rootFlag: string | undefined,
+  name: string,
+  payload: Record<string, unknown>
+): void {
+  const root = rootFlag ?? join(homedir(), ".openclaw", "workspace");
+  const path = join(root, ".cache", "osm", "plugin-markers", name);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${existsSync(path) ? readFileSync(path, 'utf8') : ''}${JSON.stringify(payload)}\n`, 'utf8');
+}
+
+function loadJsonFile<T>(path: string, fallback: T): T {
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonFile(path: string, value: unknown): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(value, null, 2) + "\n", "utf8");
 }
 
 function printReport(

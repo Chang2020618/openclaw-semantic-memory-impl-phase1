@@ -1,0 +1,92 @@
+{
+  "id": "osm-semantic-memory",
+  "name": "OSM Semantic Memory",
+  "description": "Minimal Phase-3 hook bridge for retrieval and summarize enqueue.",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "agentId": { "type": "string" },
+      "markerDir": { "type": "string" },
+      "injectStubContext": { "type": "boolean" },
+      "injectLiveContext": { "type": "boolean" },
+      "osmRoot": { "type": "string" },
+      "dbPath": { "type": "string" },
+      "embedProviderId": { "type": "string", "enum": ["openai", "local-onnx", "local-stub"] },
+      "embedModelId": { "type": "string" },
+      "embedDim": { "type": "number" },
+      "retrieveTopK": { "type": "number" },
+      "retrieveTopN": { "type": "number" },
+      "retrieveMinScore": { "type": "number" },
+      "skipWeakQuery": { "type": "boolean" },
+      "summarizeEnqueue": { "type": "boolean" },
+      "summarizeIdleMs": { "type": "number" },
+      "summarizeSettleMs": { "type": "number" },
+      "summarizeTtlDays": { "type": "number" },
+      "summarizeModel": { "type": "string" }
+    }
+  },
+  "uiHints": {
+    "enabled": {
+      "label": "Enable OSM Semantic Memory"
+    },
+    "agentId": {
+      "label": "Target Agent Id"
+    },
+    "markerDir": {
+      "label": "Marker Directory"
+    },
+    "injectStubContext": {
+      "label": "Inject Stub Context"
+    },
+    "injectLiveContext": {
+      "label": "Inject Live Retrieval Context"
+    },
+    "osmRoot": {
+      "label": "OSM Workspace Root"
+    },
+    "dbPath": {
+      "label": "OSM DB Path"
+    },
+    "embedProviderId": {
+      "label": "Embedding Provider Id"
+    },
+    "embedModelId": {
+      "label": "Embedding Model Id"
+    },
+    "embedDim": {
+      "label": "Embedding Dimension"
+    },
+    "retrieveTopK": {
+      "label": "Retrieve Top K"
+    },
+    "retrieveTopN": {
+      "label": "Retrieve Top N"
+    },
+    "retrieveMinScore": {
+      "label": "Retrieve Min Score"
+    },
+    "skipWeakQuery": {
+      "label": "Skip Weak Query"
+    },
+    "summarizeEnqueue": {
+      "label": "Summarize Enqueue"
+    },
+    "summarizeIdleMs": {
+      "label": "Summarize Idle Ms"
+    },
+    "summarizeSettleMs": {
+      "label": "Summarize Settle Ms"
+    },
+    "summarizeTtlDays": {
+      "label": "Summarize TTL Days"
+    },
+    "summarizeModel": {
+      "label": "Summarize Model"
+    }
+  }
+}

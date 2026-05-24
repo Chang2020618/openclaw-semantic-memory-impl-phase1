@@ -113,10 +113,14 @@ export function parseSummaries(raw: string): SummaryCandidate[] {
   try {
     parsed = JSON.parse(stripped);
   } catch (err) {
-    throw new Error(
-      `osm/summarize: LLM did not return valid JSON: ${(err as Error).message}\n` +
-        `Raw response (first 200 chars): ${stripped.slice(0, 200)}`
-    );
+    const rescued = tryParseJSONArray(stripped);
+    if (rescued === null) {
+      throw new Error(
+        `osm/summarize: LLM did not return valid JSON: ${(err as Error).message}\n` +
+          `Raw response (first 200 chars): ${stripped.slice(0, 200)}`
+      );
+    }
+    parsed = rescued;
   }
 
   if (!Array.isArray(parsed)) {
@@ -171,6 +175,18 @@ function stripCodeFences(s: string): string {
   // Tolerate models that wrap output in ```json ... ``` despite instructions.
   const m = s.match(/^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/u);
   return m ? (m[1] ?? "") : s;
+}
+
+function tryParseJSONArray(s: string): unknown[] | null {
+  const start = s.indexOf("[");
+  const end = s.lastIndexOf("]");
+  if (start < 0 || end <= start) return null;
+  const candidate = s.slice(start, end + 1);
+  try {
+    return JSON.parse(candidate) as unknown[];
+  } catch {
+    return null;
+  }
 }
 
 function numOr(v: unknown, fallback: number): number {
