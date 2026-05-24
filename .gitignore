@@ -34,3 +34,5 @@ coverage/
 *.db
 *.db-journal
 PUSH-TO-GITHUB.md
+
+.run-logs/
