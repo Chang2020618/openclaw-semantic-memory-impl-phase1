@@ -17,6 +17,17 @@ import { runEvalCmd } from "./cmd-eval.js";
 import { runSummarize } from "./cmd-summarize.js";
 import { runSummarizeWatch } from "./cmd-summarize-watch.js";
 import { runPanel } from "./cmd-panel.js";
+import {
+  runTaskChild,
+  runTaskChildren,
+  runTaskDelegate,
+  runTaskEvents,
+  runTaskLatest,
+  runTaskList,
+  runTaskRoots,
+  runTaskShow,
+  runTaskStart,
+} from "./cmd-task.js";
 
 const VERSION = "0.1.0-dev";
 
@@ -81,6 +92,15 @@ function printHelp(): void {
     "  summarize ... --ingest-file <f>  skip LLM, ingest JSON from <f>",
     "  summarize-watch         watch OpenClaw sessions and auto-summarize",
     "  panel                 print memory panel data (persistent + ephemeral)",
+    "  task start             create a task-tracking MVP task",
+    "  task child             create a child task under an existing task",
+    "  task delegate          auto-delegate child task and record parent timeline",
+    "  task list              list recent root tasks",
+    "  task roots             alias of task list (JSON-friendly roots surface)",
+    "  task latest            show latest task (tree view)",
+    "  task children          list direct child tasks for a task",
+    "  task events            list task events, optionally across the whole task tree",
+    "  task show <taskId>     show task details / children / timeline / approvals",
     "  version               print version and exit",
     "  help                  print this help",
     "",
@@ -286,6 +306,134 @@ async function main(argv: string[]): Promise<number> {
         limit: typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? limit : undefined,
         query: typeof flags["query"] === "string" ? flags["query"] : undefined,
       });
+    }
+
+    case "task": {
+      const sub = rest[0];
+      if (sub === "start") {
+        const title = typeof flags["title"] === "string" ? flags["title"] : "Untitled task";
+        const goal = typeof flags["goal"] === "string" ? flags["goal"] : title;
+        return runTaskStart({
+          rootFlag: rootFlagOf(flags),
+          title,
+          goal,
+          sessionKey: typeof flags["session"] === "string" ? flags["session"] : undefined,
+          ownerId: typeof flags["owner"] === "string" ? flags["owner"] : undefined,
+        });
+      }
+      if (sub === "show") {
+        const taskId = rest[1];
+        if (!taskId) {
+          console.error("osm task show: missing <taskId>");
+          return 64;
+        }
+        return runTaskShow({
+          rootFlag: rootFlagOf(flags),
+          taskId,
+          json: Boolean(flags["json"]),
+          tree: Boolean(flags["tree"]),
+          eventsLimit:
+            typeof flags["events"] === "string"
+              ? Number.parseInt(flags["events"], 10)
+              : undefined,
+        });
+      }
+      if (sub === "list") {
+        return runTaskList({
+          rootFlag: rootFlagOf(flags),
+          json: Boolean(flags["json"]),
+          limit:
+            typeof flags["limit"] === "string"
+              ? Number.parseInt(flags["limit"], 10)
+              : undefined,
+        });
+      }
+      if (sub === "roots") {
+        return runTaskRoots({
+          rootFlag: rootFlagOf(flags),
+          json: Boolean(flags["json"]),
+          limit:
+            typeof flags["limit"] === "string"
+              ? Number.parseInt(flags["limit"], 10)
+              : undefined,
+        });
+      }
+      if (sub === "latest") {
+        return runTaskLatest({
+          rootFlag: rootFlagOf(flags),
+          json: Boolean(flags["json"]),
+        });
+      }
+      if (sub === "children") {
+        const taskId = rest[1] ?? (typeof flags["task"] === "string" ? flags["task"] : undefined);
+        if (!taskId) {
+          console.error("osm task children: missing <taskId> or --task <taskId>");
+          return 64;
+        }
+        return runTaskChildren({
+          rootFlag: rootFlagOf(flags),
+          taskId,
+          json: Boolean(flags["json"]),
+        });
+      }
+      if (sub === "events") {
+        const taskId = rest[1] ?? (typeof flags["task"] === "string" ? flags["task"] : undefined);
+        if (!taskId) {
+          console.error("osm task events: missing <taskId> or --task <taskId>");
+          return 64;
+        }
+        return runTaskEvents({
+          rootFlag: rootFlagOf(flags),
+          taskId,
+          json: Boolean(flags["json"]),
+          tree: Boolean(flags["tree"]),
+          limit:
+            typeof flags["limit"] === "string"
+              ? Number.parseInt(flags["limit"], 10)
+              : undefined,
+        });
+      }
+      if (sub === "child") {
+        const parentTaskId = typeof flags["parent"] === "string" ? flags["parent"] : undefined;
+        if (!parentTaskId) {
+          console.error("osm task child: missing --parent <taskId>");
+          return 64;
+        }
+        const title = typeof flags["title"] === "string" ? flags["title"] : "Untitled child task";
+        const goal = typeof flags["goal"] === "string" ? flags["goal"] : title;
+        return runTaskChild({
+          rootFlag: rootFlagOf(flags),
+          parentTaskId,
+          title,
+          goal,
+          sessionKey: typeof flags["session"] === "string" ? flags["session"] : undefined,
+          ownerId: typeof flags["owner"] === "string" ? flags["owner"] : undefined,
+        });
+      }
+      if (sub === "delegate") {
+        const parentTaskId = typeof flags["parent"] === "string" ? flags["parent"] : undefined;
+        if (!parentTaskId) {
+          console.error("osm task delegate: missing --parent <taskId>");
+          return 64;
+        }
+        const title = typeof flags["title"] === "string" ? flags["title"] : "Untitled delegated task";
+        const goal = typeof flags["goal"] === "string" ? flags["goal"] : title;
+        return runTaskDelegate({
+          rootFlag: rootFlagOf(flags),
+          parentTaskId,
+          title,
+          goal,
+          sessionKey: typeof flags["session"] === "string" ? flags["session"] : undefined,
+          ownerId: typeof flags["owner"] === "string" ? flags["owner"] : undefined,
+          complete: flags["complete"] === true ? true : flags["fail"] === true ? false : true,
+          fail: Boolean(flags["fail"]),
+          waitApproval: Boolean(flags["wait-approval"]),
+          resultSummary:
+            typeof flags["result"] === "string" ? flags["result"] : undefined,
+        });
+      }
+      console.error("osm task: expected subcommand 'start' | 'show' | 'list' | 'roots' | 'latest' | 'children' | 'events' | 'child' | 'delegate'");
+      return 64;
     }
 
     default:

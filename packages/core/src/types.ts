@@ -214,7 +214,98 @@ export type AuditKind =
   | "health"
   | "explain"
   | "summarize"
-  | "ephemeral_expire";
+  | "ephemeral_expire"
+  | "task";
+
+/* -------------------------------------------------------------------------- */
+/* Task tracking (Task Flow MVP)                                              */
+/* -------------------------------------------------------------------------- */
+
+export type TaskKind = "manual" | "scheduled" | "delegated";
+
+export type TaskStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "waiting_input"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "blocked";
+
+export type TaskOwnerType = "user" | "agent" | "system";
+
+export interface Task {
+  id: string;
+  kind: TaskKind;
+  title: string;
+  goal: string;
+  status: TaskStatus;
+  parentTaskId?: string;
+  rootTaskId: string;
+  sessionKey?: string;
+  ownerType: TaskOwnerType;
+  ownerId: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  resultSummary?: string;
+}
+
+export type TaskRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface TaskRun {
+  id: string;
+  taskId: string;
+  attempt: number;
+  status: TaskRunStatus;
+  sessionKey?: string;
+  startedAt?: string;
+  endedAt?: string;
+  errorMessage?: string;
+}
+
+export interface RuntimeEvent {
+  id: string;
+  taskId: string;
+  taskRunId?: string;
+  sessionKey?: string;
+  type: string;
+  summary: string;
+  payloadJson?: string;
+  ts: string;
+}
+
+export type ApprovalActionType =
+  | "tool_call"
+  | "external_send"
+  | "config_change"
+  | "destructive_action";
+
+export type ApprovalRiskLevel = "medium" | "high" | "critical";
+
+export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
+
+export interface ApprovalRequest {
+  id: string;
+  taskId: string;
+  taskRunId?: string;
+  sessionKey?: string;
+  actionType: ApprovalActionType;
+  target: string;
+  reason: string;
+  riskLevel: ApprovalRiskLevel;
+  status: ApprovalStatus;
+  requestedAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+}
 
 export interface AuditRecord {
   ts: string;

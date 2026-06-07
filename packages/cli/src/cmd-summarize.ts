@@ -10,6 +10,7 @@
  *   5. embed + persist to ephemeral_*
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -30,6 +31,7 @@ import {
   loadOrInitConfig,
   resolveWorkspace,
 } from "./workspace.js";
+import { addTrackedApprovalRequest, appendTaskEvent, completeTrackedTask, createTrackedTask, failTrackedTask } from "./task-runtime.js";
 
 export interface SummarizeArgs {
   rootFlag: string | undefined;
@@ -130,6 +132,14 @@ export async function runSummarize(args: SummarizeArgs): Promise<number> {
       dim: config.embedding.dim,
     },
   });
+  const task = createTrackedTask(store, {
+    kind: "manual",
+    title: "osm summarize",
+    goal: `Summarize session transcript into ephemeral memories: ${sessionFile}`,
+    sessionKey: args.sessionId,
+    ownerType: "system",
+    ownerId: "osm.summarize",
+  });
 
   try {
     // --ingest-file: skip the LLM call; parse a JSON file the human/another
@@ -164,11 +174,32 @@ export async function runSummarize(args: SummarizeArgs): Promise<number> {
       } else {
         printReport(report, transcript.text.length);
       }
+      completeTrackedTask(store, task, `accepted=${report.summariesAccepted} embeddings=${report.embeddingsRequested}`);
       return 0;
     }
 
     const model =
       args.modelOverride ?? config.ephemeral?.summarizerModel ?? "jeniya/gpt-5.4-mini";
+
+    addTrackedApprovalRequest(store, task, {
+      sessionKey: args.sessionId,
+      actionType: "external_send",
+      target: `llm:${model}`,
+      reason: "Summarize session transcript with external LLM call",
+      riskLevel: "medium",
+      status: "approved",
+      decidedBy: "system",
+      decidedAt: new Date().toISOString(),
+    });
+    appendTaskEvent(store, {
+      id: randomUUID(),
+      taskId: task.taskId,
+      taskRunId: task.runId,
+      sessionKey: args.sessionId,
+      type: "summarize.llm.requested",
+      summary: `Calling summarizer model ${model}`,
+      ts: new Date().toISOString(),
+    });
 
     const report = await ingestSession({
       sessionFile,
@@ -199,7 +230,21 @@ export async function runSummarize(args: SummarizeArgs): Promise<number> {
     } else {
       printReport(report);
     }
+    appendTaskEvent(store, {
+      id: randomUUID(),
+      taskId: task.taskId,
+      taskRunId: task.runId,
+      sessionKey: report.sessionId,
+      type: "summarize.ingest.completed",
+      summary: `accepted=${report.summariesAccepted} embeddings=${report.embeddingsRequested}`,
+      payloadJson: JSON.stringify(report),
+      ts: new Date().toISOString(),
+    });
+    completeTrackedTask(store, task, `accepted=${report.summariesAccepted} embeddings=${report.embeddingsRequested}`);
     return report.summariesAccepted > 0 ? 0 : 0;
+  } catch (err) {
+    failTrackedTask(store, task, err);
+    throw err;
   } finally {
     store.close();
   }

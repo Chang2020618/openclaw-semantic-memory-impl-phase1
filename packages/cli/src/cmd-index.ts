@@ -18,6 +18,7 @@
  *   - we always write an audit row at the end with totals
  */
 
+import { randomUUID } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
 
 import {
@@ -31,6 +32,7 @@ import { makeEmbeddingProvider } from "@osm/embed";
 import { OsmStore } from "@osm/store";
 
 import { ensureMemoryRoot, loadOrInitConfig, resolveWorkspace } from "./workspace.js";
+import { appendTaskEvent, completeTrackedTask, createTrackedTask, failTrackedTask } from "./task-runtime.js";
 
 export interface IndexArgs {
   rootFlag: string | undefined;
@@ -97,9 +99,25 @@ export async function runIndex(args: IndexArgs): Promise<IndexReport> {
   let embeddingsRequested = 0;
 
   const fallbackTimestamp = new Date().toISOString();
+  const task = createTrackedTask(store, {
+    kind: "manual",
+    title: args.rebuild ? "osm index rebuild" : "osm index incremental",
+    goal: args.rebuild ? "Rebuild memory index from markdown" : "Incrementally update memory index from markdown",
+    ownerType: "system",
+    ownerId: "osm.index",
+  });
 
   try {
     for (const file of files) {
+      appendTaskEvent(store, {
+        id: randomUUID(),
+        taskId: task.taskId,
+        taskRunId: task.runId,
+        type: "index.file.scan",
+        summary: `Scanning ${file.relPath}`,
+        payloadJson: JSON.stringify({ relPath: file.relPath }),
+        ts: new Date().toISOString(),
+      });
       const text = readFileSync(file.absPath, "utf8");
       const sections = extractMemoriesFromMarkdown({
         relPath: file.relPath,
@@ -163,6 +181,10 @@ export async function runIndex(args: IndexArgs): Promise<IndexReport> {
 
       if (fileChangedHere) filesChanged += 1;
     }
+    completeTrackedTask(store, task, `files=${files.length} changed=${filesChanged} embeds=${embeddingsRequested}`);
+  } catch (err) {
+    failTrackedTask(store, task, err);
+    throw err;
   } finally {
     const report: IndexReport = {
       filesScanned: files.length,

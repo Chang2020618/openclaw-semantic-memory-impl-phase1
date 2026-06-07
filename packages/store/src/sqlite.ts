@@ -14,14 +14,23 @@ import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 
 import type {
+  ApprovalActionType,
+  ApprovalRiskLevel,
+  ApprovalStatus,
   AuditKind,
   Chunk,
   EphemeralChunk,
   EphemeralMemory,
   Memory,
   MemoryStatus,
+  RuntimeEvent,
   Scope,
   SourceKind,
+  Task,
+  TaskOwnerType,
+  TaskRun,
+  TaskRunStatus,
+  TaskStatus,
 } from "@osm/core";
 
 const SCHEMA_PATH = join(
@@ -106,6 +115,61 @@ export interface EphemeralChunkRow {
   hash: string;
   created_at: string;
   expires_at: string;
+}
+
+export interface TaskRow {
+  id: string;
+  kind: string;
+  title: string;
+  goal: string;
+  status: TaskStatus;
+  parent_task_id: string | null;
+  root_task_id: string;
+  session_key: string | null;
+  owner_type: TaskOwnerType;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  ended_at: string | null;
+  result_summary: string | null;
+}
+
+export interface TaskRunRow {
+  id: string;
+  task_id: string;
+  attempt: number;
+  status: TaskRunStatus;
+  session_key: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  error_message: string | null;
+}
+
+export interface RuntimeEventRow {
+  id: string;
+  task_id: string;
+  task_run_id: string | null;
+  session_key: string | null;
+  type: string;
+  summary: string;
+  payload_json: string | null;
+  ts: string;
+}
+
+export interface ApprovalRequestRow {
+  id: string;
+  task_id: string;
+  task_run_id: string | null;
+  session_key: string | null;
+  action_type: ApprovalActionType;
+  target: string;
+  reason: string;
+  risk_level: ApprovalRiskLevel;
+  status: ApprovalStatus;
+  requested_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
 }
 
 export class OsmStore {
@@ -553,6 +617,269 @@ export class OsmStore {
     this.db.close();
   }
 
+  /* ---------------- tasks (MVP) ---------------- */
+
+  createTask(task: Task): void {
+    this.db
+      .prepare(
+        `INSERT INTO tasks
+          (id, kind, title, goal, status, parent_task_id, root_task_id,
+           session_key, owner_type, owner_id, created_at, updated_at,
+           started_at, ended_at, result_summary)
+         VALUES
+          (@id, @kind, @title, @goal, @status, @parent_task_id, @root_task_id,
+           @session_key, @owner_type, @owner_id, @created_at, @updated_at,
+           @started_at, @ended_at, @result_summary)`
+      )
+      .run(taskToRow(task));
+  }
+
+  updateTaskStatus(
+    taskId: string,
+    status: TaskStatus,
+    opts?: { resultSummary?: string; startedAt?: string; endedAt?: string }
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE tasks
+            SET status = @status,
+                updated_at = @updated_at,
+                started_at = COALESCE(@started_at, started_at),
+                ended_at = COALESCE(@ended_at, ended_at),
+                result_summary = COALESCE(@result_summary, result_summary)
+          WHERE id = @id`
+      )
+      .run({
+        id: taskId,
+        status,
+        updated_at: nowIso(),
+        started_at: opts?.startedAt ?? null,
+        ended_at: opts?.endedAt ?? null,
+        result_summary: opts?.resultSummary ?? null,
+      });
+  }
+
+  getTask(taskId: string): Task | null {
+    const row = this.db
+      .prepare(`SELECT * FROM tasks WHERE id = ?`)
+      .get(taskId) as TaskRow | undefined;
+    return row ? rowToTask(row) : null;
+  }
+
+  listTasks(opts?: {
+    status?: TaskStatus;
+    rootTaskId?: string;
+    sessionKey?: string;
+    limit?: number;
+  }): Task[] {
+    const clauses: string[] = [];
+    const params: Array<string | number> = [];
+    if (opts?.status) {
+      clauses.push(`status = ?`);
+      params.push(opts.status);
+    }
+    if (opts?.rootTaskId) {
+      clauses.push(`root_task_id = ?`);
+      params.push(opts.rootTaskId);
+    }
+    if (opts?.sessionKey) {
+      clauses.push(`session_key = ?`);
+      params.push(opts.sessionKey);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = opts?.limit ?? 50;
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM tasks ${where} ORDER BY created_at DESC LIMIT ?`
+      )
+      .all(...params, limit) as TaskRow[];
+    return rows.map(rowToTask);
+  }
+
+  listTaskChildren(taskId: string): Task[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC`)
+      .all(taskId) as TaskRow[];
+    return rows.map(rowToTask);
+  }
+
+  countTaskChildrenByStatus(taskId: string): Array<{ status: TaskStatus; count: number }> {
+    return this.db
+      .prepare(
+        `SELECT status, COUNT(*) as count
+           FROM tasks
+          WHERE parent_task_id = ?
+          GROUP BY status
+          ORDER BY status ASC`
+      )
+      .all(taskId) as Array<{ status: TaskStatus; count: number }>;
+  }
+
+  listRootTasks(limit = 50): Task[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM tasks
+          WHERE parent_task_id IS NULL
+          ORDER BY created_at DESC
+          LIMIT ?`
+      )
+      .all(limit) as TaskRow[];
+    return rows.map(rowToTask);
+  }
+
+  getLatestTask(): Task | null {
+    const row = this.db
+      .prepare(`SELECT * FROM tasks ORDER BY created_at DESC LIMIT 1`)
+      .get() as TaskRow | undefined;
+    return row ? rowToTask(row) : null;
+  }
+
+  listRuntimeEventsByTaskIds(taskIds: string[], limit = 500): RuntimeEvent[] {
+    if (taskIds.length === 0) return [];
+    const placeholders = taskIds.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM runtime_events WHERE task_id IN (${placeholders}) ORDER BY ts ASC LIMIT ?`
+      )
+      .all(...taskIds, limit) as RuntimeEventRow[];
+    return rows.map(rowToRuntimeEvent);
+  }
+
+  listApprovalRequestsByTaskIds(taskIds: string[]): ApprovalRequestRow[] {
+    if (taskIds.length === 0) return [];
+    const placeholders = taskIds.map(() => "?").join(", ");
+    return this.db
+      .prepare(
+        `SELECT * FROM approval_requests WHERE task_id IN (${placeholders}) ORDER BY requested_at ASC`
+      )
+      .all(...taskIds) as ApprovalRequestRow[];
+  }
+
+  createTaskRun(run: TaskRun): void {
+    this.db
+      .prepare(
+        `INSERT INTO task_runs
+          (id, task_id, attempt, status, session_key, started_at, ended_at, error_message)
+         VALUES
+          (@id, @task_id, @attempt, @status, @session_key, @started_at, @ended_at, @error_message)`
+      )
+      .run(taskRunToRow(run));
+  }
+
+  updateTaskRunStatus(
+    runId: string,
+    status: TaskRunStatus,
+    opts?: { startedAt?: string; endedAt?: string; errorMessage?: string }
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE task_runs
+            SET status = @status,
+                started_at = COALESCE(@started_at, started_at),
+                ended_at = COALESCE(@ended_at, ended_at),
+                error_message = COALESCE(@error_message, error_message)
+          WHERE id = @id`
+      )
+      .run({
+        id: runId,
+        status,
+        started_at: opts?.startedAt ?? null,
+        ended_at: opts?.endedAt ?? null,
+        error_message: opts?.errorMessage ?? null,
+      });
+  }
+
+  listTaskRuns(taskId: string): TaskRun[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM task_runs WHERE task_id = ? ORDER BY attempt ASC`)
+      .all(taskId) as TaskRunRow[];
+    return rows.map(rowToTaskRun);
+  }
+
+  appendRuntimeEvent(event: RuntimeEvent): void {
+    this.db
+      .prepare(
+        `INSERT INTO runtime_events
+          (id, task_id, task_run_id, session_key, type, summary, payload_json, ts)
+         VALUES
+          (@id, @task_id, @task_run_id, @session_key, @type, @summary, @payload_json, @ts)`
+      )
+      .run(runtimeEventToRow(event));
+  }
+
+  listRuntimeEvents(taskId: string, limit = 200): RuntimeEvent[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM runtime_events WHERE task_id = ? ORDER BY ts ASC LIMIT ?`
+      )
+      .all(taskId, limit) as RuntimeEventRow[];
+    return rows.map(rowToRuntimeEvent);
+  }
+
+  createApprovalRequest(request: {
+    id: string;
+    taskId: string;
+    taskRunId?: string;
+    sessionKey?: string;
+    actionType: ApprovalActionType;
+    target: string;
+    reason: string;
+    riskLevel: ApprovalRiskLevel;
+    status: ApprovalStatus;
+    requestedAt: string;
+    decidedAt?: string;
+    decidedBy?: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO approval_requests
+          (id, task_id, task_run_id, session_key, action_type, target, reason, risk_level,
+           status, requested_at, decided_at, decided_by)
+         VALUES
+          (@id, @task_id, @task_run_id, @session_key, @action_type, @target, @reason, @risk_level,
+           @status, @requested_at, @decided_at, @decided_by)`
+      )
+      .run({
+        id: request.id,
+        task_id: request.taskId,
+        task_run_id: request.taskRunId ?? null,
+        session_key: request.sessionKey ?? null,
+        action_type: request.actionType,
+        target: request.target,
+        reason: request.reason,
+        risk_level: request.riskLevel,
+        status: request.status,
+        requested_at: request.requestedAt,
+        decided_at: request.decidedAt ?? null,
+        decided_by: request.decidedBy ?? null,
+      });
+  }
+
+  updateApprovalRequest(
+    id: string,
+    status: ApprovalStatus,
+    decidedBy?: string,
+    decidedAt?: string
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE approval_requests
+            SET status = ?,
+                decided_by = COALESCE(?, decided_by),
+                decided_at = COALESCE(?, decided_at)
+          WHERE id = ?`
+      )
+      .run(status, decidedBy ?? null, decidedAt ?? null, id);
+  }
+
+  listApprovalRequests(taskId: string): ApprovalRequestRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM approval_requests WHERE task_id = ? ORDER BY requested_at ASC`
+      )
+      .all(taskId) as ApprovalRequestRow[];
+  }
+
   /* ============================================================
    * Phase-2: ephemeral memory layer (session summaries)
    * ============================================================ */
@@ -900,4 +1227,100 @@ function safeJson(s: string): unknown {
   } catch {
     return s;
   }
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function taskToRow(task: Task): Record<string, unknown> {
+  return {
+    id: task.id,
+    kind: task.kind,
+    title: task.title,
+    goal: task.goal,
+    status: task.status,
+    parent_task_id: task.parentTaskId ?? null,
+    root_task_id: task.rootTaskId,
+    session_key: task.sessionKey ?? null,
+    owner_type: task.ownerType,
+    owner_id: task.ownerId,
+    created_at: task.createdAt,
+    updated_at: task.updatedAt,
+    started_at: task.startedAt ?? null,
+    ended_at: task.endedAt ?? null,
+    result_summary: task.resultSummary ?? null,
+  };
+}
+
+function rowToTask(row: TaskRow): Task {
+  return {
+    id: row.id,
+    kind: row.kind as Task["kind"],
+    title: row.title,
+    goal: row.goal,
+    status: row.status,
+    parentTaskId: row.parent_task_id ?? undefined,
+    rootTaskId: row.root_task_id,
+    sessionKey: row.session_key ?? undefined,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    startedAt: row.started_at ?? undefined,
+    endedAt: row.ended_at ?? undefined,
+    resultSummary: row.result_summary ?? undefined,
+  };
+}
+
+function taskRunToRow(run: TaskRun): Record<string, unknown> {
+  return {
+    id: run.id,
+    task_id: run.taskId,
+    attempt: run.attempt,
+    status: run.status,
+    session_key: run.sessionKey ?? null,
+    started_at: run.startedAt ?? null,
+    ended_at: run.endedAt ?? null,
+    error_message: run.errorMessage ?? null,
+  };
+}
+
+function rowToTaskRun(row: TaskRunRow): TaskRun {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    attempt: row.attempt,
+    status: row.status,
+    sessionKey: row.session_key ?? undefined,
+    startedAt: row.started_at ?? undefined,
+    endedAt: row.ended_at ?? undefined,
+    errorMessage: row.error_message ?? undefined,
+  };
+}
+
+function runtimeEventToRow(event: RuntimeEvent): Record<string, unknown> {
+  return {
+    id: event.id,
+    task_id: event.taskId,
+    task_run_id: event.taskRunId ?? null,
+    session_key: event.sessionKey ?? null,
+    type: event.type,
+    summary: event.summary,
+    payload_json: event.payloadJson ?? null,
+    ts: event.ts,
+  };
+}
+
+function rowToRuntimeEvent(row: RuntimeEventRow): RuntimeEvent {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    taskRunId: row.task_run_id ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    type: row.type,
+    summary: row.summary,
+    payloadJson: row.payload_json ?? undefined,
+    ts: row.ts,
+  };
 }

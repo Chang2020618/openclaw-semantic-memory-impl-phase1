@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { watch as fsWatch, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,6 +10,17 @@ import {
   saveSummarizeQueue,
   type SummarizeQueueEntry,
 } from "./cmd-summarize.js";
+import { OsmStore } from "@osm/store";
+import {
+  appendTaskEvent,
+  completeDelegatedTask,
+  completeTrackedTask,
+  createTrackedTask,
+  delegateTrackedTask,
+  failDelegatedTask,
+  failTrackedTask,
+} from "./task-runtime.js";
+import { ensureMemoryRoot, loadOrInitConfig, resolveWorkspace } from "./workspace.js";
 
 export interface SummarizeWatchArgs {
   rootFlag: string | undefined;
@@ -119,6 +131,9 @@ async function summarizeOne(args: {
 
 export async function runSummarizeWatch(args: SummarizeWatchArgs): Promise<number> {
   const agentId = args.agentId ?? "main";
+  const paths = resolveWorkspace(args.rootFlag);
+  ensureMemoryRoot(paths);
+  const config = loadOrInitConfig(paths);
   const sessionsDir = getSessionsDir(agentId);
   const statePath = getStatePath(args.rootFlag, agentId);
   const idleMs = args.idleMs ?? 10 * 60 * 1000;
@@ -127,8 +142,26 @@ export async function runSummarizeWatch(args: SummarizeWatchArgs): Promise<numbe
 
   loadDotEnvIfPresent(args.rootFlag);
 
+  const store = new OsmStore({
+    dbPath: paths.dbPath,
+    embedding: {
+      providerId: config.embedding.providerId,
+      modelId: config.embedding.modelId,
+      dim: config.embedding.dim,
+    },
+  });
+  const task = createTrackedTask(store, {
+    kind: "scheduled",
+    title: "osm summarize-watch",
+    goal: `Watch agent sessions and summarize idle transcripts for agent=${agentId}`,
+    ownerType: "system",
+    ownerId: "osm.summarize-watch",
+  });
+
   if (!existsSync(sessionsDir)) {
     console.error(`osm summarize-watch: sessions dir not found: ${sessionsDir}`);
+    failTrackedTask(store, task, new Error(`sessions dir not found: ${sessionsDir}`), "blocked");
+    store.close();
     return 66;
   }
 
@@ -176,6 +209,21 @@ export async function runSummarizeWatch(args: SummarizeWatchArgs): Promise<numbe
         console.log(
           `osm summarize-watch: summarizing ${filename} (idle=${Math.round(ageMs / 1000)}s)`
         );
+        const delegated = delegateTrackedTask(store, task, {
+          title: `summarize session ${filename}`,
+          goal: `Summarize idle session transcript ${filename}`,
+          ownerType: "agent",
+          ownerId: "osm.summarize-watch.delegate",
+        });
+        appendTaskEvent(store, {
+          id: randomUUID(),
+          taskId: task.taskId,
+          taskRunId: task.runId,
+          type: "summarize-watch.session.scheduled",
+          summary: `Summarizing ${filename}`,
+          payloadJson: JSON.stringify({ filename, ageMs }),
+          ts: new Date().toISOString(),
+        });
         const code = await summarizeOne({
           rootFlag: args.rootFlag,
           agentId,
@@ -190,12 +238,49 @@ export async function runSummarizeWatch(args: SummarizeWatchArgs): Promise<numbe
             updatedAt: new Date().toISOString(),
           };
           saveState(statePath, state);
+          completeDelegatedTask(
+            store,
+            task,
+            delegated,
+            `Summarized ${filename}`
+          );
+          appendTaskEvent(store, {
+            id: randomUUID(),
+            taskId: task.taskId,
+            taskRunId: task.runId,
+            type: "summarize-watch.session.done",
+            summary: `Summarized ${filename}`,
+            ts: new Date().toISOString(),
+          });
         } else {
           console.error(`osm summarize-watch: summarize failed (${code}) for ${filename}`);
+          failDelegatedTask(
+            store,
+            task,
+            delegated,
+            new Error(`Summarize failed (${code}) for ${filename}`)
+          );
+          appendTaskEvent(store, {
+            id: randomUUID(),
+            taskId: task.taskId,
+            taskRunId: task.runId,
+            type: "summarize-watch.session.error",
+            summary: `Summarize failed (${code}) for ${filename}`,
+            ts: new Date().toISOString(),
+          });
         }
       } catch (err) {
         const msg = err instanceof Error ? err.stack ?? err.message : String(err);
         console.error(`osm summarize-watch: ${msg}`);
+        // best-effort delegated failure recording if creation happened before throw
+        appendTaskEvent(store, {
+          id: randomUUID(),
+          taskId: task.taskId,
+          taskRunId: task.runId,
+          type: "summarize-watch.session.error",
+          summary: msg,
+          ts: new Date().toISOString(),
+        });
       } finally {
         running.delete(sessionFile);
       }
@@ -221,6 +306,15 @@ export async function runSummarizeWatch(args: SummarizeWatchArgs): Promise<numbe
       e.status = "running";
       e.lastRunAt = new Date().toISOString();
       saveSummarizeQueue(args.rootFlag, queue);
+      appendTaskEvent(store, {
+        id: randomUUID(),
+        taskId: task.taskId,
+        taskRunId: task.runId,
+        type: "summarize-watch.queue.run",
+        summary: `Queue flush for session ${e.sessionId ?? key}`,
+        payloadJson: JSON.stringify(e),
+        ts: new Date().toISOString(),
+      });
 
       try {
         const sessionFile = join(getSessionsDir(e.agentId ?? agentId), `${e.sessionId}.jsonl`);
@@ -328,6 +422,8 @@ export async function runSummarizeWatch(args: SummarizeWatchArgs): Promise<numbe
       }
       clearInterval(queueInterval);
       for (const t of timers.values()) clearTimeout(t);
+      completeTrackedTask(store, task, `${signal} shutdown`);
+      store.close();
       resolveExit(0);
     };
     process.on("SIGINT", () => shutdown("SIGINT"));

@@ -16,7 +16,7 @@
     "test": "pnpm -r test",
     "lint": "echo 'lint not configured yet'",
     "osm": "node packages/cli/dist/index.js",
-    "summarize-watch": "node packages/cli/dist/index.js summarize-watch --root /root/.openclaw/workspace --agent main --idle-ms 180000 --settle-ms 5000 --cold-start-max-age-ms 0"
+    "summarize-watch": "node packages/cli/dist/index.js summarize-watch --root /root/.openclaw/workspace --agent main --idle-ms 600000 --settle-ms 20000 --cold-start-max-age-ms 0"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

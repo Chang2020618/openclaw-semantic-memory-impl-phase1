@@ -12,11 +12,16 @@
  * walks the tree and reindexes on any mtime change.
  */
 
+import { randomUUID } from "node:crypto";
 import { watch as fsWatch, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { makeEmbeddingProvider } from "@osm/embed";
+import { OsmStore } from "@osm/store";
+
 import { runIndex } from "./cmd-index.js";
-import { resolveWorkspace } from "./workspace.js";
+import { appendTaskEvent, completeTrackedTask, createTrackedTask, failTrackedTask } from "./task-runtime.js";
+import { ensureMemoryRoot, loadOrInitConfig, resolveWorkspace } from "./workspace.js";
 
 export interface WatchArgs {
   rootFlag: string | undefined;
@@ -25,6 +30,25 @@ export interface WatchArgs {
 
 export async function runWatch(args: WatchArgs): Promise<number> {
   const paths = resolveWorkspace(args.rootFlag);
+  ensureMemoryRoot(paths);
+  const config = loadOrInitConfig(paths);
+  const providerId = args.providerOverride ?? config.embedding.providerId;
+  void makeEmbeddingProvider;
+  const store = new OsmStore({
+    dbPath: paths.dbPath,
+    embedding: {
+      providerId,
+      modelId: config.embedding.modelId,
+      dim: config.embedding.dim,
+    },
+  });
+  const task = createTrackedTask(store, {
+    kind: "manual",
+    title: "osm watch",
+    goal: "Watch markdown memory files and trigger incremental index updates",
+    ownerType: "system",
+    ownerId: "osm.watch",
+  });
   const workspaceMemoryMd = join(paths.workspaceRoot, "MEMORY.md");
 
   console.log(`osm watch: monitoring ${paths.memoryRoot}`);
@@ -52,11 +76,28 @@ export async function runWatch(args: WatchArgs): Promise<number> {
             : {}),
         });
         const ts = new Date().toISOString();
+        appendTaskEvent(store, {
+          id: randomUUID(),
+          taskId: task.taskId,
+          taskRunId: task.runId,
+          type: "watch.index.completed",
+          summary: `${reason} — files=${report.filesScanned} changed=${report.filesChanged}`,
+          payloadJson: JSON.stringify(report),
+          ts,
+        });
         console.log(
           `[${ts}] osm: ${reason} — files=${report.filesScanned} changed=${report.filesChanged} embeds=${report.embeddingsRequested} (${report.durationMs}ms)`
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        appendTaskEvent(store, {
+          id: randomUUID(),
+          taskId: task.taskId,
+          taskRunId: task.runId,
+          type: "watch.index.failed",
+          summary: msg,
+          ts: new Date().toISOString(),
+        });
         console.error(`osm watch: index failed — ${msg}`);
       } finally {
         inFlight = false;
@@ -86,10 +127,18 @@ export async function runWatch(args: WatchArgs): Promise<number> {
       paths.memoryRoot,
       { recursive: true },
       (event, filename) => {
-        if (process.env["OSM_WATCH_DEBUG"]) {
+      if (process.env["OSM_WATCH_DEBUG"]) {
           console.log(`[watch] event=${event} file=${filename}`);
         }
         if (!isInteresting(filename)) return;
+        appendTaskEvent(store, {
+          id: randomUUID(),
+          taskId: task.taskId,
+          taskRunId: task.runId,
+          type: "watch.fs.event",
+          summary: `${event} ${filename}`,
+          ts: new Date().toISOString(),
+        });
         trigger(`memory/${filename}`);
       }
     );
@@ -129,10 +178,10 @@ export async function runWatch(args: WatchArgs): Promise<number> {
       if (stopped) return;
       try {
         const st = statSync(paths.memoryRoot);
-        if (st.mtimeMs > lastSeen) {
-          if (lastSeen !== 0) trigger("polling tick");
-          lastSeen = st.mtimeMs;
-        }
+      if (st.mtimeMs > lastSeen) {
+        if (lastSeen !== 0) trigger("polling tick");
+        lastSeen = st.mtimeMs;
+      }
       } catch {
         // ignore
       }
@@ -146,6 +195,7 @@ export async function runWatch(args: WatchArgs): Promise<number> {
       if (stopped) return;
       stopped = true;
       console.log(`\nosm watch: ${signal} received, shutting down.`);
+      completeTrackedTask(store, task, `${signal} shutdown`);
       for (const w of watchers) {
         try {
           w.close();
@@ -154,6 +204,7 @@ export async function runWatch(args: WatchArgs): Promise<number> {
         }
       }
       if (pollTimer) clearTimeout(pollTimer);
+      store.close();
       resolveExit(0);
     };
     process.on("SIGINT", () => shutdown("SIGINT"));

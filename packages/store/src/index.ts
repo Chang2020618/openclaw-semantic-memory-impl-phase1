@@ -7,4 +7,8 @@ export type {
   LexicalHit,
   EphemeralMemoryRow,
   EphemeralChunkRow,
+  TaskRow,
+  TaskRunRow,
+  RuntimeEventRow,
+  ApprovalRequestRow,
 } from "./sqlite.js";
