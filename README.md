@@ -1,14 +1,25 @@
-# OpenClaw Semantic Memory — reference implementation
+# OpenClaw Semantic Memory — Phase-1 Reference Implementation
+
+> **⚠️ Project Status**: This is a working reference implementation in active development (Phase-2). It is **open-source for learning and forking**, but **not currently accepting external contributions (PRs)**. Issues for bug reports are welcome.
 
 A drop-in, file-system-first semantic memory layer for AI agents. Markdown stays the source of truth. The index is disposable. Every retrieved memory carries a real citation back to a line range in your source files.
 
 This is the Phase-1 reference implementation of OpenClaw Semantic Memory v0.1. The design spec lives in a sibling design repo; this repo is the build.
 
-```
+```sh
 $ osm init    --root /path/to/workspace
 $ osm index   --rebuild
 $ osm search  "Flutter Android APK 打包"
 ```
+
+## Why this exists
+
+Most AI agents forget everything between sessions. This gives them **durable, citation-backed memory** that:
+
+- Survives restarts (markdown is truth, index is cache)
+- Returns real citations (file path + line range)
+- Runs locally (no API key required for default ONNX provider)
+- Respects your files (never auto-edits markdown)
 
 ## v0.1 scorecard (2026-05-21)
 
@@ -28,7 +39,7 @@ Default provider: `local-onnx:Xenova/multilingual-e5-small` (384 dims, runs loca
 Requires Node 22+ and pnpm 10+.
 
 ```sh
-git clone <this-repo> osm
+git clone https://github.com/Chang2020618/openclaw-semantic-memory-impl-phase1 osm
 cd osm
 pnpm install         # installs onnxruntime-node + transformers (~600 MB once)
 pnpm build
@@ -41,7 +52,9 @@ node packages/cli/dist/index.js search  "your query" --root /path/to/workspace
 
 First `index --rebuild` downloads the embedding model (~118 MB) into `~/.cache/huggingface/transformers/`. After that everything is offline.
 
-To use OpenAI / Jeniya / any OpenAI-compatible endpoint instead, edit `<workspace>/memory/.cache/config.json`:
+### Using OpenAI / Jeniya / any OpenAI-compatible endpoint
+
+Edit `<workspace>/memory/.cache/config.json`:
 
 ```json
 {
@@ -70,43 +83,44 @@ then `osm index --rebuild` (vector dims must match, so a full rebuild is require
 
 Add `--json` to most commands for machine-readable output. `--debug` on `search` adds candidate counts and rejection reasons.
 
-## Goals (v0.1 mandatory)
+## Design principles (v0.1 spec)
 
-The 12 mandatory requirements from the design spec:
+**12 mandatory requirements:**
 
-1. read all markdown under `memory/`
-2. chunk by heading + paragraph + size cap
-3. embed new/changed chunks
-4. store vectors and metadata in a disposable index
-5. expose `retrieve(query)` returning v0.1 result schema
-6. provide hybrid retrieval (semantic + lexical, fused)
-7. emit citations for every result
-8. write capture events as `episode` objects with provenance
-9. never modify canonical markdown automatically
-10. survive index deletion (rebuild from markdown must work)
-11. log every retrieval with `whyMatched`
-12. respect scope filters at retrieval time
+1. Read all markdown under `memory/`
+2. Chunk by heading + paragraph + size cap
+3. Embed new/changed chunks
+4. Store vectors and metadata in a disposable index
+5. Expose `retrieve(query)` returning v0.1 result schema
+6. Provide hybrid retrieval (semantic + lexical, fused)
+7. Emit citations for every result
+8. Write capture events as `episode` objects with provenance
+9. Never modify canonical markdown automatically
+10. Survive index deletion (rebuild from markdown must work)
+11. Log every retrieval with `whyMatched`
+12. Respect scope filters at retrieval time
 
-All twelve are implemented and verified against the dogfood corpus.
+**Hard rules:**
 
-## Hard rules (from v0.1 spec)
+- Markdown is the source of truth; the index can always be rebuilt from it
+- Inferred memory never auto-promotes to fact
+- Inferred memory never overrides `human_confirmed` memory
+- Secrets never enter the vector index
+- Archived memory never auto-resurrects
+- Failure recovery never auto-edits canonical markdown
 
-- markdown is the source of truth; the index can always be rebuilt from it
-- inferred memory never auto-promotes to fact
-- inferred memory never overrides `human_confirmed` memory
-- secrets never enter the vector index
-- archived memory never auto-resurrects
-- failure recovery never auto-edits canonical markdown
+All requirements are implemented and verified against a real agent workspace (dogfood corpus).
 
-## Stack
+## Architecture
 
+**Stack:**
 - TypeScript on Node 22+
 - pnpm workspace
 - SQLite (better-sqlite3) + FTS5 + cosine over BLOB-stored float32 vectors
 - Hybrid retrieval via Reciprocal Rank Fusion (semantic + lexical)
 - Pluggable embedding providers (`openai` / `local-onnx` / `local-stub`)
 
-## Layout
+**Layout:**
 
 ```
 packages/
@@ -126,15 +140,39 @@ packages/
 
 | Milestone | Scope | Status |
 |---|---|---|
-| M1 | repo skeleton + core types + empty CLI | done |
-| M2 | store + chunker | done |
-| M3 | embed + index | done |
-| M4 | retrieve | done |
-| M5 | capture loop | done with M3 |
-| M6 | audit + explain + doctor + watch | done |
-| M7 | eval harness + gate | done |
-| M8 | dogfood pass + real-embedding gate | done — see [`docs/21-dogfood-report.md`](docs/21-dogfood-report.md) |
+| M1 | repo skeleton + core types + empty CLI | ✅ done |
+| M2 | store + chunker | ✅ done |
+| M3 | embed + index | ✅ done |
+| M4 | retrieve | ✅ done |
+| M5 | capture loop | ✅ done with M3 |
+| M6 | audit + explain + doctor + watch | ✅ done |
+| M7 | eval harness + gate | ✅ done |
+| M8 | dogfood pass + real-embedding gate | ✅ done |
+| **Phase-2** | Task control plane + agent delegation | 🚧 in progress |
+
+## Contributing
+
+**This project is currently NOT accepting pull requests.** The architecture is still evolving (Phase-2), and external contributions would slow down core development.
+
+**What you CAN do:**
+- ⭐ Star the repo if you find it useful
+- 🐛 Open issues for bug reports (include repro steps)
+- 🍴 Fork and adapt for your own use (MIT license)
+- 📖 Learn from the code and design decisions
+
+When Phase-2 stabilizes, I may open up to external contributions. For now, this is a **solo-maintained reference implementation**.
+
+## Related projects
+
+- [OpenClaw](https://github.com/openclaw/openclaw) — The AI agent framework this was built for
+- [Design spec repo](https://github.com/Chang2020618/openclaw-semantic-memory-design) _(if public, otherwise remove this line)_
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE) for details.
+
+---
+
+**Author:** [Chang Zhang](https://github.com/Chang2020618)  
+**Built for:** OpenClaw agent memory persistence  
+**Status:** Phase-1 complete, Phase-2 in progress
